@@ -45,6 +45,20 @@
     [else
      (vector-set! vec index val)]))
 
+(define (get* M l)
+  (define (f M l)
+    (if (empty? l)
+        M
+        (f (vector-ref M (car l)) (cdr l))))
+  (f M (reverse l)))
+
+(define (set* M l v)
+  (define (f M l)
+    (if (= (length l) 1)
+        (vector-set! M (car l) v)
+        (f (vector-ref M (car l)) (cdr l))))
+  (f M (reverse l)))
+
 (define-syntax get
   (syntax-rules ()
     ((get M i)
