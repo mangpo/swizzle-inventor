@@ -9,12 +9,12 @@
 
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
-(provide (rename-out [@+ +] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@if if])
+(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@if if])
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize get-warpId get-idInWarp
          shfl
-         define-accumulator accumulate get-accumulator-val normalize-accumulator
+         accumulator define-accumulator accumulate get-accumulator-val normalize-accumulator
          run-kernel)
 
 
@@ -60,6 +60,7 @@
     ))
 
 (define-operator @+ $+ +)
+(define-operator @- $- -)
 (define-operator @* $* *)
 (define-operator @> $> >)
 (define-operator @>= $>= >=)
@@ -161,7 +162,7 @@
                (set I (+ offset-x x) (+ offset-y y) (+ offset-z z) (get I-shared x y z))))))]
     ))
 
-(define-syntax-rule ;; TODO: pred
+(define-syntax-rule
   (global-to-reg I I-reg offset blockDim bounds)
   (let* ([blockSize (apply * blockDim)]
          [new-I-reg (make-vector blockSize #f)])
@@ -173,7 +174,7 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set I-reg i (get* I global-i))))))
 
-(define-syntax-rule ;; TODO: pred
+(define-syntax-rule
   (reg-to-global I-reg I offset blockDim bounds)
   (let* ([blockSize (apply * blockDim)])
     (for ([i blockSize]
@@ -181,7 +182,7 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set* I global-i (get I-reg i))))))
 
-(define-syntax-rule ;; TODO: pred
+(define-syntax-rule 
   (global-to-warp-reg I I-reg pattern offset sizes blockDim bounds transpose)
   (cond
     [(= (length blockDim) 1)
@@ -229,7 +230,27 @@
   res)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(struct accumulator (val oplist opfinal veclen) #:mutable)
+(define (acc=? x y recursive-equal?)
+  (and (equal? (accumulator-val x) (accumulator-val y))
+       (equal? (accumulator-oplist x) (accumulator-oplist y))
+       (equal? (accumulator-opfinal x) (accumulator-opfinal y))))
+
+(define (acc-hash-1 x recursive-equal-hash)
+    (+ (* 10007 (equal-hash-code (accumulator-val x)))
+       (* 101 (equal-hash-code (accumulator-oplist x)))
+       (* 3 (equal-hash-code (accumulator-opfinal x)))))
+
+(define (acc-hash-2 x recursive-equal-hash)
+    (+ (* 101 (equal-secondary-hash-code (accumulator-val x)))
+       (* 3 (equal-secondary-hash-code (accumulator-oplist x)))
+       (* 10007 (equal-secondary-hash-code (accumulator-opfinal x)))))
+
+(struct accumulator (val oplist opfinal veclen) #:mutable
+  #:methods gen:equal+hash
+  [(define equal-proc acc=?)
+   (define hash-proc  acc-hash-1)
+   (define hash2-proc acc-hash-2)])
+
 (define-syntax-rule
   (define-accumulator o blockDim op-list final-op)
   (define o
