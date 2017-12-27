@@ -14,7 +14,7 @@
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize get-warpId get-idInWarp
          shfl
-         accumulator define-accumulator accumulate get-accumulator-val normalize-accumulator
+         accumulator create-accumulator accumulate get-accumulator-val normalize-accumulator
          run-kernel)
 
 
@@ -251,12 +251,13 @@
    (define hash-proc  acc-hash-1)
    (define hash2-proc acc-hash-2)])
 
-(define-syntax-rule
-  (define-accumulator o blockDim op-list final-op)
-  (define o
-    (build-vector (apply * blockDim)
-                  (lambda (i) (accumulator (list) op-list final-op (apply * blockDim))))))
-
+(define-syntax create-accumulator
+  (syntax-rules ()
+    ((create-accumulator o op-list final-op)
+     (accumulator (list) op-list final-op #f))
+    ((create-accumulator o op-list final-op blockDim)
+     (build-vector (apply * blockDim)
+                   (lambda (i) (accumulator (list) op-list final-op (apply * blockDim)))))))
 
 (define-syntax-rule (get-accumulator-val x)
   (if (vector? x)
@@ -264,10 +265,11 @@
       (accumulator-val x)))
 
 (define (normalize-accumulator x)
-  (for ([acc x])
-    (set-accumulator-val!
-     acc
-     (%sort (accumulator-val acc) (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))))
+  (if (accumulator? x)
+      (set-accumulator-val!
+       x
+       (%sort (accumulator-val x) (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))
+      (for ([acc x]) (normalize-accumulator acc))))
 
 (define (vector-of-list l veclen)
   (for/vector ([i veclen])
@@ -275,22 +277,31 @@
       (%sort each (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))))
 
 (define (accumulate x val-list)
-  (define veclen (accumulator-veclen (get x 0)))
-  (define (f val-list op-list)
+  (define (f val-list op-list veclen)
     (if (= (length op-list) 1)
         (begin
           (assert (or (number? val-list) (vector? val-list))) ;; TODO
-          (if (vector? val-list)
+          (if (or (vector? val-list) (equal? veclen #f))
               val-list
               (for/vector ([i veclen]) val-list)))
         (let ([l (for/list ([val val-list])
-                   (f val (cdr op-list)))])
-          (vector-of-list l veclen))))
-  
-  (define addition (f val-list (accumulator-oplist (get x 0))))
-  (for ([acc x]
-        [add addition])
-    (set-accumulator-val! acc (cons add (accumulator-val acc)))))
+                   (f val (cdr op-list) veclen))])
+          (if veclen
+              (vector-of-list l veclen)
+              l))))
+
+  (cond
+    [(vector? x)
+     (define veclen (accumulator-veclen (get x 0)))
+     (define addition (f val-list (accumulator-oplist (get x 0)) veclen))
+     (for ([acc x]
+           [add addition])
+       (set-accumulator-val! acc (cons add (accumulator-val acc))))]
+
+    [else
+     (define add (f val-list (accumulator-oplist x) #f))
+     (set-accumulator-val! x (cons add (accumulator-val x)))
+     ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; run kernel ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

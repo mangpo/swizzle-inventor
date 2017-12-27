@@ -47,4 +47,4 @@
 ;;(run-kernel transpose1 (x-y-z 2 2) (x-y-z 3 3) I O*)
 (run-kernel transpose2 (x-y-z 4 1) (x-y-z 2 2) I O*)
 (pretty-display `(O* ,O*))
-;;(verify #:guarantee (assert (equal? O O*)))
+(verify #:guarantee (assert (equal? O O*)))

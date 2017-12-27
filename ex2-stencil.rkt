@@ -13,11 +13,11 @@
 
 (define (conv1d-spec I O o-sizes)
   (for ([i (get-x o-sizes)])
-    (let ([o (list)])
+    (let ([o (create-accumulator o (list +) /3)])
       (for ([j 3])
-        (set! o (cons (get I (+ i j)) o)))
-      (let ([sorted (%sort o (lambda (x y) (string<? (format "~a" x) (format "~a" y))))])
-        (set O i (accumulator sorted (list +) /3 #f))))))
+        (accumulate o (get I (+ i j))))
+      (normalize-accumulator o)
+      (set O i o))))
 
 (define (conv1d threadId blockID blockDim I O)
   (define I-cached (create-matrix (x-y-z 2)))
@@ -34,7 +34,7 @@
 
   (define localId (get-idInWarp threadId blockDim))
   (pretty-display `(localId ,localId))
-  (define-accumulator o blockDim (list +) /3)
+  (define o (create-accumulator o (list +) /3 blockDim))
   (for ([i 3])
     (let* ([index (if (< localId i) 1 0)]
            [x (shfl (get I-cached index) (modulo (+ i localId) warpSize))])
