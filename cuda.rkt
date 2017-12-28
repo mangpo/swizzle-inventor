@@ -9,7 +9,7 @@
 
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
-(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@if if])
+(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize get-warpId get-idInWarp
@@ -36,7 +36,7 @@
       [else (op x y)]))
   (f x y))
 
-(define (@if c x y)
+(define (@ite c x y) ;; TODO
   (define (f c x y)
     (cond
       [(and (vector? c) (vector? x) (vector? y)) (for/vector ([ci c] [xi x] [yi y]) (f ci xi yi))]
@@ -163,8 +163,8 @@
     ))
 
 (define-syntax-rule
-  (global-to-reg I I-reg offset blockDim bounds)
-  (let* ([blockSize (apply * blockDim)]
+  (global-to-reg I I-reg offset bounds)
+  (let* ([blockSize (vector-length offset)]
          [new-I-reg (make-vector blockSize #f)])
     (for ([t blockSize])
       (set new-I-reg t (clone I-reg)))
@@ -175,8 +175,8 @@
         (set I-reg i (get* I global-i))))))
 
 (define-syntax-rule
-  (reg-to-global I-reg I offset blockDim bounds)
-  (let* ([blockSize (apply * blockDim)])
+  (reg-to-global I-reg I offset bounds)
+  (let* ([blockSize (vector-length offset)])
     (for ([i blockSize]
           [global-i offset])
       (when (for/and ([b bounds] [i global-i]) (< i b))
@@ -221,11 +221,15 @@
 (define (shfl val lane)
   (define len (vector-length val))
   (define res (make-vector len #f))
+  (define lane-vec
+    (if (vector? lane)
+        (for/vector ([l lane]) (modulo l warpSize))
+        (for/vector ([i len]) (modulo lane warpSize))))
   (for ([iter (quotient (vector-length val) warpSize)])
     (let ([offset (* iter warpSize)])
       (for ([i warpSize])
         (let ([i-dest (+ offset i)]
-              [i-src (+ offset (get lane (+ offset i)))])
+              [i-src (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
   res)
 
@@ -273,14 +277,14 @@
 
 (define (vector-of-list l veclen)
   (for/vector ([i veclen])
-    (let ([each (map l (lambda (x) (if (vector? x) (get x i) x)))])
+    (let ([each (map (lambda (x) (if (vector? x) (get x i) x)) l)])
       (%sort each (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))))
 
-(define (accumulate x val-list)
+(define (accumulate x val-list #:pred [pred #t])
   (define (f val-list op-list veclen)
     (if (= (length op-list) 1)
         (begin
-          (assert (or (number? val-list) (vector? val-list))) ;; TODO
+          (assert (or (number? val-list) (vector? val-list)))
           (if (or (vector? val-list) (equal? veclen #f))
               val-list
               (for/vector ([i veclen]) val-list)))
@@ -294,11 +298,14 @@
     [(vector? x)
      (define veclen (accumulator-veclen (get x 0)))
      (define addition (f val-list (accumulator-oplist (get x 0)) veclen))
+     (define pred-vec (if (vector? pred) pred (for/vector ([i veclen]) pred)))
      (for ([acc x]
-           [add addition])
-       (set-accumulator-val! acc (cons add (accumulator-val acc))))]
+           [add addition]
+           [p pred-vec])
+       (when p
+         (set-accumulator-val! acc (cons add (accumulator-val acc)))))]
 
-    [else
+    [pred
      (define add (f val-list (accumulator-oplist x) #f))
      (set-accumulator-val! x (cons add (accumulator-val x)))
      ]))

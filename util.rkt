@@ -71,10 +71,14 @@
     ((set M i v) (my-vector-set! M i v))
     ((set M i ... j v) (set (my-vector-ref M j) i ... v))))
 
+(define (my-list-ref l index)
+  (if (vector? l)
+      (for/vector ([x l]) (my-list-ref x index))
+      (list-ref l index)))
 
-(define-syntax-rule (get-x l) (first l))
-(define-syntax-rule (get-y l) (second l))
-(define-syntax-rule (get-z l) (third l))
+(define-syntax-rule (get-x l) (my-list-ref l 0))
+(define-syntax-rule (get-y l) (my-list-ref l 1))
+(define-syntax-rule (get-z l) (my-list-ref l 2))
 (define-syntax x-y-z
   (syntax-rules ()
     ((x-y-z x) (list x))

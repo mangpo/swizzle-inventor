@@ -36,13 +36,13 @@
   (pretty-display `(localId ,localId))
   (define o (create-accumulator o (list +) /3 blockDim))
   (for ([i 3])
-    (let* ([index (if (< localId i) 1 0)]
+    (let* ([index (ite (< localId i) 1 0)]
            [x (shfl (get I-cached index) (modulo (+ i localId) warpSize))])
       (pretty-display `(x ,x))
       (accumulate o x)
       (normalize-accumulator o)
       ))
-  (reg-to-global o O threadId blockDim (- sizes 2))
+  (reg-to-global o O threadId (- sizes 2))
   )
 
 
