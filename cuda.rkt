@@ -10,15 +10,25 @@
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
+         @dup gen-uid
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize get-warpId get-idInWarp
          shfl
-         accumulator create-accumulator accumulate get-accumulator-val normalize-accumulator
+         accumulator create-accumulator accumulate get-accumulator-val acc-equal?
          run-kernel)
 
 
 (define warpSize 4)
+(define blockSize 4)
+(define blockDim #f)
+(define gridDim #f)
+(define-syntax-rule (@dup x) (for/vector ([i blockSize]) x))
+
+(define uid 0)
+(define (gen-uid)
+  (set! uid (add1 uid))
+  uid)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; lifted operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -34,9 +44,11 @@
       [(list? x) (for/list ([xi x]) (f xi y))]
       [(list? y) (for/list ([yi y]) (f x yi))]
       [else (op x y)]))
-  (f x y))
+  (for*/all ([xi x] [yi y])
+    (f xi yi)))
 
-(define (@ite c x y) ;; TODO
+
+(define (@ite c x y) ;; TODO: not quite correct
   (define (f c x y)
     (cond
       [(and (vector? c) (vector? x) (vector? y)) (for/vector ([ci c] [xi x] [yi y]) (f ci xi yi))]
@@ -47,16 +59,19 @@
       [(and (vector? x)) (for/vector ([xi x]) (f c xi y))]
       [(and (vector? y)) (for/vector ([yi y]) (f c x yi))]
       [else (if c x y)]))
-  (f c x y))
+  (for*/all ([ci c] [xi x] [yi y])
+    (f ci xi yi)))
 
 (define-syntax-rule (define-operator my-op @op op)
   (begin
-    (define (@ l)
+    (define (@op l)
       (cond
         [(= (length l) 1) (car l)]
-        [(= (length l) 2) (iterate (first l) (second l) op)]
-        [else (iterate (first l) (@ (cdr l)) op)]))
-    (define my-op (lambda l (@ l)))
+        [(= (length l) 2)
+         ;(when (equal? `@op `$<) (pretty-display `(@op ,l)))
+         (iterate (first l) (second l) op)]
+        [else (iterate (first l) (@op (cdr l)) op)]))
+    (define my-op (lambda l (@op l)))
     ))
 
 (define-operator @+ $+ +)
@@ -183,7 +198,7 @@
         (set* I global-i (get I-reg i))))))
 
 (define-syntax-rule 
-  (global-to-warp-reg I I-reg pattern offset sizes blockDim bounds transpose)
+  (global-to-warp-reg I I-reg pattern offset sizes bounds transpose)
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -221,10 +236,13 @@
 (define (shfl val lane)
   (define len (vector-length val))
   (define res (make-vector len #f))
+  
   (define lane-vec
     (if (vector? lane)
-        (for/vector ([l lane]) (modulo l warpSize))
+        (for/all ([my-lane lane])
+          (for/vector ([l my-lane]) (modulo l warpSize)))
         (for/vector ([i len]) (modulo lane warpSize))))
+  
   (for ([iter (quotient (vector-length val) warpSize)])
     (let ([offset (* iter warpSize)])
       (for ([i warpSize])
@@ -234,18 +252,41 @@
   res)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define (multiset= x y)
+  (cond
+    [(and (list? x) (list? y))
+     (define ret (= (length x) (length y)))
+     (for ([xi x])
+       (let ([f (lambda (yi) (multiset= xi yi))])
+         (set! ret (and ret (= (count f x) (count f y))))))
+     ret]
+
+    [else (equal? x y)]))
+
+(define (multiset-hash x)
+  (cond
+    [(list? x)
+     (foldl (lambda (xi res) (+ res (multiset-hash xi))) 0 x)]
+    [else (equal-hash-code x)]))
+
+(define (multiset-hash2 x)
+  (cond
+    [(list? x)
+     (foldl (lambda (xi res) (+ res (multiset-hash2 xi))) 0 x)]
+    [else (equal-secondary-hash-code x)]))
+
 (define (acc=? x y recursive-equal?)
-  (and (equal? (accumulator-val x) (accumulator-val y))
+  (and (multiset= (accumulator-val x) (accumulator-val y))
        (equal? (accumulator-oplist x) (accumulator-oplist y))
        (equal? (accumulator-opfinal x) (accumulator-opfinal y))))
 
 (define (acc-hash-1 x recursive-equal-hash)
-    (+ (* 10007 (equal-hash-code (accumulator-val x)))
+    (+ (* 10007 (multiset-hash (accumulator-val x)))
        (* 101 (equal-hash-code (accumulator-oplist x)))
        (* 3 (equal-hash-code (accumulator-opfinal x)))))
 
 (define (acc-hash-2 x recursive-equal-hash)
-    (+ (* 101 (equal-secondary-hash-code (accumulator-val x)))
+    (+ (* 101 (multiset-hash2 (accumulator-val x)))
        (* 3 (equal-secondary-hash-code (accumulator-oplist x)))
        (* 10007 (equal-secondary-hash-code (accumulator-opfinal x)))))
 
@@ -267,13 +308,6 @@
   (if (vector? x)
       (for/vector ([xi x]) (accumulator-val xi))
       (accumulator-val x)))
-
-(define (normalize-accumulator x)
-  (if (accumulator? x)
-      (set-accumulator-val!
-       x
-       (%sort (accumulator-val x) (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))
-      (for ([acc x]) (normalize-accumulator acc))))
 
 (define (vector-of-list l veclen)
   (for/vector ([i veclen])
@@ -299,20 +333,37 @@
      (define veclen (accumulator-veclen (get x 0)))
      (define addition (f val-list (accumulator-oplist (get x 0)) veclen))
      (define pred-vec (if (vector? pred) pred (for/vector ([i veclen]) pred)))
-     (for ([acc x]
-           [add addition]
-           [p pred-vec])
-       (when p
-         (set-accumulator-val! acc (cons add (accumulator-val acc)))))]
+     ;(pretty-display `(pred-vec ,pred-vec ,(vector-length pred-vec)))
+     (for/all ([my-pred pred-vec])
+       (for ([acc x]
+             [add addition]
+             [p my-pred])
+         (when p
+           (set-accumulator-val! acc (cons add (accumulator-val acc))))))]
 
     [pred
      (define add (f val-list (accumulator-oplist x) #f))
      (set-accumulator-val! x (cons add (accumulator-val x)))
      ]))
 
+(define (acc-equal? x y)
+  (cond
+    [(or (and (vector? x) (vector? y))
+         (and (list? x) (list? y)))
+     (define ret #t)
+     (for ([xi x] [yi y])
+       (set! ret (and ret (acc-equal? xi yi))))
+     ret
+     ]
+
+    [(and (accumulator? x) (accumulator? y))
+     (acc=? x y #t)]
+
+    [else (equal? x y)]))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; run kernel ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (get-warpId threadID blockDim)
+(define (get-warpId threadID)
   (if (list? threadID)
       (let ([sum 0])
         (for ([id (reverse threadID)]
@@ -320,9 +371,9 @@
           (set! sum (+ sum (* id dim))))
         (quotient sum warpSize))
       (for/vector ([id threadID])
-        (get-warpId id blockDim))))
+        (get-warpId id))))
 
-(define (get-idInWarp threadID blockDim)
+(define (get-idInWarp threadID)
   (if (list? threadID)
       (let ([sum 0])
         (for ([id (reverse threadID)]
@@ -330,7 +381,7 @@
           (set! sum (+ sum (* id dim))))
         (modulo sum warpSize)) ;; differ only here
       (for/vector ([id threadID])
-        (get-idInWarp id blockDim))))
+        (get-idInWarp id))))
 
 (define (get-threadId sizes)
   (define ret (list))
@@ -342,7 +393,11 @@
   (rec (list) (reverse sizes))
   (list->vector (reverse ret)))
 
-(define (run-grid kernel gridDim blockDim threadIds args)
+(define (run-grid kernel my-gridDim my-blockDim threadIds args)
+  (set! gridDim my-gridDim)
+  (set! blockDim my-blockDim)
+  (set! blockSize (apply * my-blockDim))
+  
   (define (f blockID sizes)
     (if (empty? sizes)
         (begin
@@ -351,11 +406,10 @@
         (for ([i (car sizes)])
           (f (cons i blockID) (cdr sizes)))))
   (f (list) (reverse gridDim)))
-    
 
-(define-syntax-rule (run-kernel kernel blockDim gridDim x ...)
-  (let ([Ids (get-threadId blockDim)])
-    (run-grid kernel gridDim blockDim Ids (list x ...))))
+(define-syntax-rule (run-kernel kernel my-blockDim my-gridDim x ...)
+  (let ([Ids (get-threadId my-blockDim)])
+    (run-grid kernel my-gridDim my-blockDim Ids (list x ...))))
 
 
 (define (test-transpose1)

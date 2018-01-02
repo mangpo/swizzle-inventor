@@ -18,14 +18,18 @@
     [(and (vector? index)
           (= (vector-length vec) (vector-length index))
           (vector? (vector-ref vec 0)))
-     (for/vector ([vec-i vec] [index-i index]) (vector-ref vec-i index-i))]
+     (for*/all ([my-vec vec] [my-index index])
+         (for/vector ([vec-i my-vec] [index-i my-index]) (vector-ref vec-i index-i)))]
 
     [(vector? index)
-     (for/vector ([index-i index]) (vector-ref vec index-i))]
+     (for*/all ([my-vec vec] [my-index index])
+       (for/vector ([index-i my-index]) (vector-ref my-vec index-i)))]
 
-    [else (vector-ref vec index)]))
+    [else
+     (for*/all ([my-vec vec] [my-index index])
+       (vector-ref my-vec my-index))]))
 
-(define (my-vector-set! vec index val)
+(define (my-vector-set! vec index val) ;; TODO: for*/all
   (when (and (vector? index) (vector? val))
     (assert (= (vector-length vec) (vector-length val)) `(= (vector-length vec) (vector-length val))))
   (cond
