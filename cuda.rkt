@@ -13,17 +13,19 @@
          @dup gen-uid
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
-         warpSize get-warpId get-idInWarp
+         warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim
          shfl
-         accumulator create-accumulator accumulate get-accumulator-val acc-equal?
+         accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal?
          run-kernel)
 
 
 (define warpSize 4)
 (define blockSize 4)
-(define blockDim #f)
-(define gridDim #f)
+(define blockDim (list 8))
+(define gridDim (list 1))
 (define-syntax-rule (@dup x) (for/vector ([i blockSize]) x))
+(define (get-blockDim) blockDim)
+(define (get-gridDim) gridDim)
 
 (define uid 0)
 (define (gen-uid)
@@ -197,6 +199,20 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set* I global-i (get I-reg i))))))
 
+(define-syntax-rule
+  (for/bounded ([i I]) body ...)
+  (letrec ([f (lambda (i bound)
+                (if (> bound 0)
+                    (when (< i I)
+                      body ...
+                      (f (+ i 1) (- bound 1)))
+                    (assert #f)))])
+    (f 0 4)))
+
+;; pattern = (x-y-z stride-x ...)
+;; The pattern is round-robin in all deminsion.
+;; stride-x = how many elements belong to a thread in one round.
+;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
 (define-syntax-rule 
   (global-to-warp-reg I I-reg pattern offset sizes bounds transpose)
   (cond
@@ -212,20 +228,22 @@
          (set new-I-reg t (clone I-reg)))
        (set! I-reg new-I-reg)
        (for* ([warp (quotient blockSize warpSize)])
-         (let ([offset-x (get-x (get offset (* warp warpSize)))]
+         (let ([offset-x (if (vector? offset)
+                             (get-x (get offset (* warp warpSize)))
+                             (get (get-x offset) (* warp warpSize)))]
                [global-x 0])
-           (pretty-display `(warp ,warp ,offset-x ,size-x))
-           (for* ([it iter-x]
-                  [t warpSize]
-                  [my-i stride-x])
-             (when (and (< global-x size-x)
-                        (< (+ offset-x global-x) I-len)
-                        (< (+ offset-x global-x) bound-x))
-               (set (get I-reg (+ t (* warp warpSize))) ;; thead in a block
-                    (+ my-i (* it stride-x)) ;; local index
-                    (get I (+ offset-x global-x))))
-             (set! global-x (add1 global-x))
-             ))))]
+           (for/bounded ([it iter-x])
+             (for ([t warpSize])
+               (for/bounded ([my-i stride-x])
+                 (when (and (< global-x size-x)
+                            (< (+ offset-x global-x) I-len)
+                            (< (+ offset-x global-x) bound-x))
+                   (set (get I-reg (+ t (* warp warpSize))) ;; thead in a block
+                        (+ my-i (* it stride-x)) ;; local index
+                        (get I (+ offset-x global-x))))
+                 (set! global-x (add1 global-x)))))
+           )))
+     ]
 
     ;; TODO
     [else (raise "unimplemented")]
