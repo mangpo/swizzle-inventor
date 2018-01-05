@@ -83,13 +83,13 @@
   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
 
-  (for ([i (get-x sizes)])
+  (for ([i 4])  ;; TODO: for/bounded --> failed
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
       (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
   
-  (for ([i (get-x sizes)])
+  (for ([i 4])  ;; TODO: synthesize loop bound
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
@@ -129,3 +129,65 @@
   (print-forms sol)
   )
 (synthesis)
+
+(define (load-synth)
+  ;; Store
+  (define (mult-store threadId blockId blockDim C D)
+    (define warpID (get-warpId threadId))
+    (define o
+      (for/vector ([w  warpID]
+                   [t threadId])
+        (ID t w blockId)))
+    (reg-to-global o C threadId sizes)
+    (reg-to-global o D threadId sizes)
+    )
+
+  ;; Run spec -- already ran
+  
+  ;; Collect IDs
+  (define C-IDs (create-matrix sizes))
+  (define D-IDs (create-matrix sizes))
+  (run-kernel mult-store sizes (x-y-z 1) C-IDs D-IDs)
+
+  (define-values (C-threads C-warps C-blocks) (get-grid-storage))
+  (collect-inputs C C-IDs C-threads C-warps C-blocks)
+  (define-values (D-threads D-warps D-blocks) (get-grid-storage))
+  (collect-inputs D D-IDs D-threads D-warps D-blocks)
+
+  (define warps (vector-list-append C-warps D-warps))
+  (define a-regs (num-regs warps A))
+  (pretty-display `(a-regs ,a-regs))
+  (define b-regs (num-regs warps B))
+  (pretty-display `(b-regs ,b-regs))
+
+  ;; Load
+  (define (mult-load threadId blockId blockDim A B C-warp-spec D-warp-spec)
+    (define warpId (get-warpId threadId))
+    ;; sketch starts
+    (define A-cached (create-matrix (x-y-z a-regs)))
+    (define B-cached (create-matrix (x-y-z b-regs)))
+    (global-to-warp-reg A A-cached
+                        (x-y-z (??)) ;; stride
+                        (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
+                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        sizes #f)
+    (global-to-warp-reg B B-cached
+                        (x-y-z (??)) ;; stride
+                        (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
+                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        sizes #f)
+    ;; sketch ends
+    (check-warp-input C-warp-spec A A-cached warpId blockId)
+    (check-warp-input D-warp-spec A A-cached warpId blockId)
+    (check-warp-input C-warp-spec B B-cached warpId blockId)
+    (check-warp-input D-warp-spec B B-cached warpId blockId)
+    )
+
+  (run-kernel mult-load sizes (x-y-z 1) A B C-warps D-warps)
+  (define sol
+    (time
+     (synthesize
+      #:forall (append (symbolics A) (symbolics B))
+      #:guarantee (assert #t))))
+  (print-forms sol)
+  )

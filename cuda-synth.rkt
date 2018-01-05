@@ -5,7 +5,7 @@
 (provide ?? ?index ?lane ?cond
          ?warp-size ?warp-offset
          print-forms choose
-         ID get-grid-storage collect-inputs check-warp-input num-regs)
+         ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append)
 
 (define-synthax ?cond
   ([(?cond x ...)
@@ -69,13 +69,14 @@
        (update-val threads (append (ID-thread id) (ID-block id)) vals)]))
   (f O IDs))
 
-(define (num-regs warps)
+(define (num-regs warps I)
+  (define all-inputs (list->set (to-list I)))
   (define max-num 0)
   (define (f x)
     (cond
       [(vector? x) (for ([xi x]) (f xi))]
       [else
-       (define n (set-count (list->set x)))
+       (define n (set-count (set-intersect (list->set x) all-inputs)))
        (when (> n max-num) (set! max-num n))]))
   (f warps)
   (+ (quotient (- max-num 1) warpSize) 1))
@@ -84,6 +85,11 @@
   (cond
     [(or (vector? x) (list? x)) (for/list ([xi x]) (to-list xi))]
     [else x]))
+
+(define (vector-list-append x y)
+  (cond
+    [(and (vector? x) (vector? y)) (for/vector ([xi x] [yi y]) (vector-list-append xi yi))]
+    [else (append x y)]))
 
 (define (check-warp-input warp-input-spec I I-cached warpId blockId)
   (define all-inputs (to-list I))

@@ -49,7 +49,7 @@
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) /3 blockDim))
     
-  (for ([i 3])
+  (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) 1)]
            [lane (?lane localId (@dup i) 1)]
            [x (shfl (get I-cached index) lane)])
@@ -81,64 +81,67 @@
       #:guarantee (assert (acc-equal? O O*)))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
-;; Store
-(define (conv1d-store threadId blockId blockDim O)
-  (define warpID (get-warpId threadId))
-  (define o
-    (for/vector ([w  warpID]
-                 [t threadId])
-      (ID t w blockId)))
-  (reg-to-global o O threadId (- sizes 2))
+(define (load-synth)
+  ;; Store
+  (define (conv1d-store threadId blockId blockDim O)
+    (define warpID (get-warpId threadId))
+    (define o
+      (for/vector ([w  warpID]
+                   [t threadId])
+        (ID t w blockId)))
+    (reg-to-global o O threadId (- sizes 2))
+    )
+  
+  ;; Run spec
+  (conv1d-spec I O (- sizes 2))
+  
+  ;; Collect IDs
+  (define IDs (create-matrix (- sizes 2)))
+  (run-kernel conv1d-store (x-y-z 8) (x-y-z 1) IDs)
+  (define-values (threads warps blocks) (get-grid-storage))
+  (collect-inputs O IDs threads warps blocks)
+  (define n-regs (num-regs warps I))
+  (pretty-display `(n-regs ,n-regs))
+  
+  ;; Load
+  (define (conv1d-load threadId blockId blockDim I warp-input-spec)
+    (define warpId (get-warpId threadId))
+    ;; sketch starts
+    (define I-cached (create-matrix (x-y-z n-regs)))
+    (global-to-warp-reg I I-cached
+                        (x-y-z (??)) ;; stride
+                        (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
+                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        sizes #f)
+    ;; sketch ends
+    (check-warp-input warp-input-spec I I-cached warpId blockId)
+    )
+  
+  (run-kernel conv1d-load (x-y-z 8) (x-y-z 1) I warps)
+  (define sol
+    (time
+     (synthesize
+      #:forall (symbolics I)
+      #:guarantee (assert #t))))
+  (when (sat? sol)
+    (print-forms sol)
+    (define sol-hash (match sol [(model m) m]))
+    (for ([key-val (hash->list sol-hash)])
+      (let ([key (car key-val)]
+            [val (cdr key-val)])
+        (when (string-contains? (format "~a" key) "stencil:114") ;; stride
+          (assert (not (equal? key val)))
+          (pretty-display `(v ,key ,val ,(string-contains? (format "~a" key) "stencil:113")))))
+      ))
+  
+  (define sol2
+    (time
+     (synthesize
+      #:forall (symbolics I)
+      #:guarantee (assert #t))))
+  (when (sat? sol2)
+    (print-forms sol2))
   )
-
-;; Run spec
-(conv1d-spec I O (- sizes 2))
-
-;; Collect IDs
-(define IDs (create-matrix (- sizes 2)))
-(run-kernel conv1d-store (x-y-z 8) (x-y-z 1) IDs)
-(define-values (threads warps blocks) (get-grid-storage))
-(collect-inputs O IDs threads warps blocks)
-(define n-regs (num-regs warps))
-(pretty-display `(n-regs ,n-regs))
-
-;; Load
-(define (conv1d-load threadId blockId blockDim I warp-input-spec)
-  (define warpId (get-warpId threadId))
-  ;; sketch starts
-  (define I-cached (create-matrix (x-y-z n-regs)))
-  (global-to-warp-reg I I-cached
-                 (x-y-z (??)) ;; stride
-                 (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
-                 (x-y-z (?warp-size warpSize 1)) ;; load size
-                 sizes #f)
-  ;; sketch ends
-  (check-warp-input warp-input-spec I I-cached warpId blockId)
-  )
-
-(run-kernel conv1d-load (x-y-z 8) (x-y-z 1) I warps)
-(define sol
-  (time
-   (synthesize
-    #:forall (symbolics I)
-    #:guarantee (assert #t))))
-(when (sat? sol)
-  (print-forms sol)
-  (define sol-hash (match sol [(model m) m]))
-  (for ([key-val (hash->list sol-hash)])
-    (let ([key (car key-val)]
-          [val (cdr key-val)])
-      (when (string-contains? (format "~a" key) "stencil:113") ;; stride
-        (assert (not (equal? key val)))
-        (pretty-display `(v ,key ,val ,(string-contains? (format "~a" key) "stencil:113")))))
-  ))
-
-(define sol2
-  (time
-   (synthesize
-    #:forall (symbolics I)
-    #:guarantee (assert #t))))
-(when (sat? sol2)
-  (print-forms sol2))
+;(load-synth)

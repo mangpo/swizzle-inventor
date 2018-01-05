@@ -10,7 +10,7 @@
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
-         @dup gen-uid
+         @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim
