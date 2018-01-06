@@ -223,28 +223,31 @@
             [blockSize (apply * blockDim)]
             [iter-x (add1 (quotient (sub1 size-x) (* warpSize stride-x)))]
             [I-len (vector-length I)]
+            [I-reg-len (vector-length I-reg)]
             [new-I-reg (make-vector blockSize #f)])
        (for ([t blockSize])
          (set new-I-reg t (clone I-reg)))
        (set! I-reg new-I-reg)
-       (pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
-       (for* ([warp (quotient blockSize warpSize)])
+       ;;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
+       (for ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
-                             (get-x (get offset (* warp warpSize)))
-                             (get (get-x offset) (* warp warpSize)))]
-               [global-x 0])
+                             (get-x (vector-ref offset (* warp warpSize)))
+                             (vector-ref (get-x offset) (* warp warpSize)))]
+               [inc-x 0])
+           ;;(pretty-display `(offset-x ,offset-x))
            (for/bounded ([it iter-x])
              (for ([t warpSize])
                (for/bounded ([my-i stride-x])
-                 (when (and (< global-x size-x)
-                            (< (+ offset-x global-x) I-len)
-                            (< (+ offset-x global-x) bound-x))
-                   (set (get I-reg (+ t (* warp warpSize))) ;; thread in a block
+                 (when (and (< inc-x size-x)
+                            (< (+ offset-x inc-x) I-len)
+                            (< (+ offset-x inc-x) bound-x)
+                            (< (+ my-i (* it stride-x)) I-reg-len)
+                            )
+                   (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
                         (+ my-i (* it stride-x)) ;; local index
-                        (get I (+ offset-x global-x)))
-                   ;(pretty-display `(loop ,warp ,it ,t ,my-i))
+                        (vector-ref I (+ offset-x inc-x)))
                    )
-                 (set! global-x (add1 global-x)))))
+                 (set! inc-x (+ inc-x 1)))))
            )))
      ]
 

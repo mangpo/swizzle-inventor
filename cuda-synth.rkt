@@ -74,7 +74,7 @@
       [(vector? id)
        (for ([oi o] [idi id]) (f oi idi))]
 
-      [(accumulator? o)
+      [(and (accumulator? o) (ID? id))
        (define vals (flatten (accumulator-val o)))
        (update-val blocks (ID-block id) vals)
        (update-val warps (cons (ID-warp id) (ID-block id)) vals)
@@ -118,7 +118,6 @@
   (for ([i n]
         [my-input warp-input])
     (let ([spec (list->set (get* warp-input-spec (cons i blockId)))])
-      ;(pretty-display `(subset ,spec ,my-input))
       (for ([x spec])
         (when (member x all-inputs)
           (assert (member x my-input))))

@@ -3,8 +3,7 @@
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 (require (only-in racket [sort %sort] [< %<]))
 
-
-(define sizes (x-y-z 10))
+(define sizes (x-y-z 16))
 ;(define I (create-matrix sizes (lambda () (define-symbolic* x integer?) x)))
 (define I (create-matrix sizes gen-uid))
 (define O (create-matrix (- sizes 2)))
@@ -23,6 +22,7 @@
   (define I-cached (create-matrix (x-y-z 2)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
+  (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z 1)
                  offset (x-y-z (+ warpSize 2)) sizes #f)
@@ -35,13 +35,14 @@
            [x (shfl (get I-cached index) lane)])
       (accumulate o x)
       ))
-  (reg-to-global o O threadId (- sizes 2))
+  (reg-to-global o O gid (- sizes 2))
   )
 
 (define (conv1d-sketch threadId blockID blockDim I O)
   (define I-cached (create-matrix (x-y-z 2)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
+  (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z 1)
                  offset (x-y-z (+ warpSize 2)) sizes #f)
@@ -56,18 +57,18 @@
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
   
-  (reg-to-global o O threadId (- sizes 2))
+  (reg-to-global o O gid (- sizes 2))
   )
 
 (define (synthesis)
-  (run-kernel conv1d-sketch (x-y-z 8) (x-y-z 1) I O*)
+  (conv1d-spec I O (- sizes 2))
+  (run-kernel conv1d-sketch (x-y-z 8) (x-y-z 2) I O*)
   #;(pretty-display `(O* ,O*))
-  #;(for ([i 8])
+  #;(for ([i 14])
       (pretty-display `(O* ,i ,(get-accumulator-val (get O* i)))))
   
-  (conv1d-spec I O (- sizes 2))
   #;(pretty-display `(O ,O))
-  (for ([i 8])
+  #;(for ([i 14])
     (pretty-display `(O ,i ,(get-accumulator-val (get O i)))))
   
   ;(pretty-display `(acc-equal? ,(acc-equal? O O*)))
@@ -82,7 +83,7 @@
       #:guarantee (assert (acc-equal? O O*)))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
 (define (load-synth)
   ;; Store
@@ -99,8 +100,8 @@
   (conv1d-spec I O (- sizes 2))
   
   ;; Collect IDs
-  (define IDs (create-matrix (- sizes 2)))
-  (run-kernel conv1d-store (x-y-z 8) (x-y-z 1) IDs)
+  (define IDs (create-matrix (- sizes 1)))
+  (run-kernel conv1d-store (x-y-z 8) (x-y-z 2) IDs)
   (define-values (threads warps blocks) (get-grid-storage))
   (collect-inputs O IDs threads warps blocks)
   (define n-regs (num-regs warps I))
@@ -116,16 +117,11 @@
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
                         sizes #f)
-    #;(global-to-warp-reg I I-cached
-                        (x-y-z (choose 1 2 3)) ;; stride
-                        (+ (* blockId blockDim) (* warpId warpSize)) ;; offset
-                        (x-y-z (+ warpSize 2)) ;; load size
-                        sizes #f)
     ;; sketch ends
     (check-warp-input warp-input-spec I I-cached warpId blockId)
     )
   
-  (run-kernel conv1d-load (x-y-z 8) (x-y-z 1) I warps)
+  (run-kernel conv1d-load (x-y-z 8) (x-y-z 2) I warps)
   (define sol
     (time
      (synthesize
@@ -133,21 +129,13 @@
       #:guarantee (assert #t))))
   (when (sat? sol)
     (print-forms sol)
-    (define sol-hash (match sol [(model m) m]))
-    (for ([key-val (hash->list sol-hash)])
+    #;(define sol-hash (match sol [(model m) m]))
+    #;(for ([key-val (hash->list sol-hash)])
       (let ([key (car key-val)]
             [val (cdr key-val)])
         (when (string-contains? (format "~a" key) "stencil:115") ;; stride
           (assert (not (equal? key val)))
           (pretty-display `(v ,key ,val ,(string-contains? (format "~a" key) "stencil:113")))))
       ))
-  
-  (define sol2
-    (time
-     (synthesize
-      #:forall (symbolics I)
-      #:guarantee (assert #t))))
-  (when (sat? sol2)
-    (print-forms sol2))
   )
-(load-synth)
+;(load-synth)

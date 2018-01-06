@@ -1,6 +1,8 @@
 #lang rosette
 
-(provide (all-defined-out)) 
+(provide (all-defined-out))
+
+(current-bitwidth 8)
 
 ;; dims: x y z
 (define (create-matrix dims [init (lambda () 0)])

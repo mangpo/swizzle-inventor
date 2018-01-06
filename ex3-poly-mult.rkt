@@ -62,13 +62,13 @@
   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
 
-  (for/bounded ([i (??)])  ;; TODO: for/bounded --> failed
+  (for/bounded ([i (choose warpSize (??))])
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
       (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
   
-  (for/bounded ([i (??)])  ;; TODO: synthesize loop bound
+  (for/bounded ([i (choose warpSize (??))])
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
@@ -105,7 +105,7 @@
       #:guarantee (assert (and (acc-equal? C C*) (acc-equal? D D*))))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
 (define (load-synth)
   ;; Store
@@ -168,4 +168,4 @@
       #:guarantee (assert #t))))
   (print-forms sol)
   )
-(load-synth)
+;(load-synth)
