@@ -48,13 +48,14 @@
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) /3 blockDim))
-    
+
   (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) 1)]
            [lane (?lane localId (@dup i) 1)]
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
+  
   (reg-to-global o O threadId (- sizes 2))
   )
 
@@ -81,7 +82,7 @@
       #:guarantee (assert (acc-equal? O O*)))))
   (print-forms sol)
   )
-(synthesis)
+;(synthesis)
 
 (define (load-synth)
   ;; Store
@@ -91,7 +92,7 @@
       (for/vector ([w  warpID]
                    [t threadId])
         (ID t w blockId)))
-    (reg-to-global o O threadId (- sizes 2))
+    (reg-to-global o O (get-global-threadId threadId blockId) (- sizes 2))
     )
   
   ;; Run spec
@@ -115,6 +116,11 @@
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
                         sizes #f)
+    #;(global-to-warp-reg I I-cached
+                        (x-y-z (choose 1 2 3)) ;; stride
+                        (+ (* blockId blockDim) (* warpId warpSize)) ;; offset
+                        (x-y-z (+ warpSize 2)) ;; load size
+                        sizes #f)
     ;; sketch ends
     (check-warp-input warp-input-spec I I-cached warpId blockId)
     )
@@ -131,7 +137,7 @@
     (for ([key-val (hash->list sol-hash)])
       (let ([key (car key-val)]
             [val (cdr key-val)])
-        (when (string-contains? (format "~a" key) "stencil:114") ;; stride
+        (when (string-contains? (format "~a" key) "stencil:115") ;; stride
           (assert (not (equal? key val)))
           (pretty-display `(v ,key ,val ,(string-contains? (format "~a" key) "stencil:113")))))
       ))
@@ -144,4 +150,4 @@
   (when (sat? sol2)
     (print-forms sol2))
   )
-;(load-synth)
+(load-synth)

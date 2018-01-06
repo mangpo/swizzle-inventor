@@ -29,13 +29,25 @@
           (?lane x ... (- depth 1))
           (?lane x ... (- depth 1)))))
 
-(define-synthax (?warp-size x ... depth)
+(define-synthax (?warp-size-const x ... depth)
  #:base (choose x ... (??))
  #:else (choose
          x ... (??)
          ((choose + -)
+          (?warp-size-const x ... (- depth 1))
+          (?warp-size-const x ... (- depth 1)))))
+
+(define-synthax (?warp-size x ... depth)
+ #:base (choose x ...)
+ #:else (choose
+         x ...
+         ((choose + -)
           (?warp-size x ... (- depth 1))
-          (?warp-size x ... (- depth 1)))))
+          (?warp-size-const x ... (- depth 1)))
+         (-
+          (?warp-size-const x ... (- depth 1))
+          (?warp-size x ... (- depth 1)))
+         ))
 
 (define-synthax ?warp-offset
   ([(?warp-offset [id size] ...)
@@ -106,6 +118,7 @@
   (for ([i n]
         [my-input warp-input])
     (let ([spec (list->set (get* warp-input-spec (cons i blockId)))])
+      ;(pretty-display `(subset ,spec ,my-input))
       (for ([x spec])
         (when (member x all-inputs)
           (assert (member x my-input))))

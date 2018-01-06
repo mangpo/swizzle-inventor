@@ -52,27 +52,6 @@
   (reg-to-global acc2 D threadId sizes)
   )
 
-(define (mult-test threadId blockID blockDim A B C D)
-   (define a-cached #f)
-   (define b-cached #f)
-   (global-to-reg A a-cached threadId sizes)
-   (global-to-reg B b-cached threadId sizes)
-   (define tidx (get-idInWarp threadId))
-   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
-   (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
-   (for
-    ((i (get-x sizes)))
-    (let ((a (shfl a-cached (- (@dup i) (- (@dup 1) (@dup 1)))))
-          (b (shfl b-cached (+ (+ (@dup i) tidx) (+ (@dup i) (@dup i))))))
-      (accumulate acc1 (list a b) #:pred (>= tidx (@dup i)))))
-   (for
-    ((i (get-x sizes)))
-    (let ((a (shfl a-cached (@dup i)))
-          (b (shfl b-cached (- tidx (+ (@dup 1) (@dup i))))))
-      (accumulate acc2 (list a b) #:pred (< tidx (@dup i)))))
-   (reg-to-global acc1 C threadId sizes)
-   (reg-to-global acc2 D threadId sizes))
-
 (define (mult-sketch threadId blockID blockDim A B C D)
   (define a-cached #f)
   (define b-cached #f)
@@ -83,13 +62,13 @@
   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
 
-  (for ([i 4])  ;; TODO: for/bounded --> failed
+  (for/bounded ([i (??)])  ;; TODO: for/bounded --> failed
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
       (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
   
-  (for ([i 4])  ;; TODO: synthesize loop bound
+  (for/bounded ([i (??)])  ;; TODO: synthesize loop bound
     (let ([a (shfl a-cached (?lane tidx (@dup i) 2))]
           [b (shfl b-cached (?lane tidx (@dup i) 2))]
           )
@@ -104,7 +83,7 @@
 (for ([d D]) (pretty-display `(d ,(get-accumulator-val d))))
 
 (define (validate)
-  (run-kernel mult-test sizes (x-y-z 1) A B C* D*)
+  (run-kernel mult sizes (x-y-z 1) A B C* D*)
   (for ([c C*]) (pretty-display `(c ,(get-accumulator-val c))))
   (for ([d D*]) (pretty-display `(d ,(get-accumulator-val d))))
   
@@ -118,9 +97,7 @@
   (run-kernel mult-sketch sizes (x-y-z 1) A B C* D*)
   (pretty-display "solving...")
   
-  ;; z3 is actaully super fast
-  ;; depth 0 1 0 2 --> 9s  (sym) | 2s (conc)
-  ;; depth 2 --> 38s (sym) | 9s (conc)
+  ;; < 1 s
   (define sol
     (time
      (synthesize
@@ -128,7 +105,7 @@
       #:guarantee (assert (and (acc-equal? C C*) (acc-equal? D D*))))))
   (print-forms sol)
   )
-(synthesis)
+;(synthesis)
 
 (define (load-synth)
   ;; Store
@@ -169,7 +146,7 @@
     (global-to-warp-reg A A-cached
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
-                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                         sizes #f)
     (global-to-warp-reg B B-cached
                         (x-y-z (??)) ;; stride
@@ -191,3 +168,4 @@
       #:guarantee (assert #t))))
   (print-forms sol)
   )
+(load-synth)

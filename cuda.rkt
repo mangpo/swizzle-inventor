@@ -13,7 +13,7 @@
          @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
-         warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim
+         warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal?
          run-kernel)
@@ -39,30 +39,29 @@
 (define (iterate x y op)
   (define (f x y)
     (cond
-      [(and (vector? x) (vector? y)) (for/vector ([xi x] [yi y]) (f xi yi))]
-      [(vector? x) (for/vector ([xi x]) (f xi y))]
-      [(vector? y) (for/vector ([yi y]) (f x yi))]
-      [(and (list? x) (list? y)) (for/list ([xi x] [yi y]) (f xi yi))]
-      [(list? x) (for/list ([xi x]) (f xi y))]
-      [(list? y) (for/list ([yi y]) (f x yi))]
+      [(and (vector? x) (vector? y)) (for/vector ([i (vector-length x)]) (f (get x i) (get y i)))]
+      [(vector? x) (for/vector ([i (vector-length x)]) (f (get x i) y))]
+      [(vector? y) (for/vector ([i (vector-length y)]) (f x (get y i)))]
+      [(and (list? x) (list? y)) (map f x y)]
+      [(list? x) (map (lambda (xi) (f xi y)) x)]
+      [(list? y) (map (lambda (yi) (f x yi)) y)]
       [else (op x y)]))
-  (for*/all ([xi x] [yi y])
-    (f xi yi)))
+  (f x y))
 
 
 (define (@ite c x y) ;; TODO: not quite correct
   (define (f c x y)
     (cond
-      [(and (vector? c) (vector? x) (vector? y)) (for/vector ([ci c] [xi x] [yi y]) (f ci xi yi))]
-      [(and (vector? c) (vector? x)) (for/vector ([ci c] [xi x]) (f ci xi y))]
-      [(and (vector? c) (vector? y)) (for/vector ([ci c] [yi y]) (f ci x yi))]
-      [(and (vector? x) (vector? y)) (for/vector ([xi x] [yi y]) (f c xi yi))]
-      [(and (vector? c)) (for/vector ([ci c]) (f ci x y))]
-      [(and (vector? x)) (for/vector ([xi x]) (f c xi y))]
-      [(and (vector? y)) (for/vector ([yi y]) (f c x yi))]
-      [else (if c x y)]))
-  (for*/all ([ci c] [xi x] [yi y])
-    (f ci xi yi)))
+      [(and (vector? c) (vector? x) (vector? y)) (for/vector ([i (vector-length c)]) (f (get c i) (get x i) (get y i)))]
+      [(and (vector? c) (vector? x)) (for/vector ([i (vector-length c)]) (f (get c i) (get x i) y))]
+      [(and (vector? c) (vector? y)) (for/vector ([i (vector-length c)]) (f (get c i) x (get y i)))]
+      [(and (vector? x) (vector? y)) (for/vector ([i (vector-length x)]) (f c (get x i) (get y i)))]
+      [(and (vector? c)) (for/vector ([i (vector-length c)]) (f (get c i) x y))]
+      [(and (vector? x)) (for/vector ([i (vector-length x)]) (f c (get x i) y))]
+      [(and (vector? y)) (for/vector ([i (vector-length y)]) (f c x (get y i)))]
+      [else (if c x y)])
+    )
+  (f c x y))
 
 (define-syntax-rule (define-operator my-op @op op)
   (begin
@@ -202,11 +201,12 @@
 (define-syntax-rule
   (for/bounded ([i I]) body ...)
   (letrec ([f (lambda (i bound)
-                (if (> bound 0)
-                    (when (< i I)
-                      body ...
-                      (f (+ i 1) (- bound 1)))
-                    (assert #f)))])
+                (when (< i I)
+                  (if (> bound 0)
+                      (begin
+                        body ...
+                        (f (+ i 1) (- bound 1)))
+                      (assert #f))))])
     (f 0 4)))
 
 ;; pattern = (x-y-z stride-x ...)
@@ -227,6 +227,7 @@
        (for ([t blockSize])
          (set new-I-reg t (clone I-reg)))
        (set! I-reg new-I-reg)
+       (pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
        (for* ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
                              (get-x (get offset (* warp warpSize)))
@@ -238,9 +239,11 @@
                  (when (and (< global-x size-x)
                             (< (+ offset-x global-x) I-len)
                             (< (+ offset-x global-x) bound-x))
-                   (set (get I-reg (+ t (* warp warpSize))) ;; thead in a block
+                   (set (get I-reg (+ t (* warp warpSize))) ;; thread in a block
                         (+ my-i (* it stride-x)) ;; local index
-                        (get I (+ offset-x global-x))))
+                        (get I (+ offset-x global-x)))
+                   ;(pretty-display `(loop ,warp ,it ,t ,my-i))
+                   )
                  (set! global-x (add1 global-x)))))
            )))
      ]
@@ -257,8 +260,7 @@
   
   (define lane-vec
     (if (vector? lane)
-        (for/all ([my-lane lane])
-          (for/vector ([l my-lane]) (modulo l warpSize)))
+        (for/vector ([i (vector-length lane)]) (modulo (get lane i) warpSize))
         (for/vector ([i len]) (modulo lane warpSize))))
   
   (for ([iter (quotient (vector-length val) warpSize)])
@@ -352,12 +354,13 @@
      (define addition (f val-list (accumulator-oplist (get x 0)) veclen))
      (define pred-vec (if (vector? pred) pred (for/vector ([i veclen]) pred)))
      ;(pretty-display `(pred-vec ,pred-vec ,(vector-length pred-vec)))
-     (for/all ([my-pred pred-vec])
-       (for ([acc x]
-             [add addition]
-             [p my-pred])
+     (for ([i (vector-length x)])
+       (let ([p (get pred-vec i)]
+             [acc (get x i)]
+             [add (get addition i)])
          (when p
-           (set-accumulator-val! acc (cons add (accumulator-val acc))))))]
+           (set-accumulator-val! acc (cons add (accumulator-val acc))))))
+     ]
 
     [pred
      (define add (f val-list (accumulator-oplist x) #f))
@@ -400,6 +403,13 @@
         (modulo sum warpSize)) ;; differ only here
       (for/vector ([id threadID])
         (get-idInWarp id))))
+
+(define (get-global-threadId threadId blockId)
+  ;(pretty-display `(get-global-threadId ,threadId ,blockId ,blockDim))
+  (if (list? threadId)
+      (@+ threadId (@* blockId blockDim))
+      (for/vector ([id threadId])
+        (get-global-threadId id blockId))))
 
 (define (get-threadId sizes)
   (define ret (list))
