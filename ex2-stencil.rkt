@@ -1,7 +1,6 @@
 #lang rosette
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
-(require (only-in racket [sort %sort] [< %<]))
 
 (define sizes (x-y-z 16))
 ;(define I (create-matrix sizes (lambda () (define-symbolic* x integer?) x)))
@@ -52,7 +51,7 @@
 
   (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) 1)]
-           [lane (?lane localId (@dup i) 1)]
+           [lane (?lane localId (@dup i) [warpSize] 1)]
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))

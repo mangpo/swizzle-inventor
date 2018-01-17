@@ -17,17 +17,19 @@
  #:base (choose x ... (@dup (??)))
  #:else (choose
          x ... (@dup (??))
+         ((choose + -) (?index x ... (- depth 1)) (?index x ... (- depth 1)))
          (ite (?cond x ...)
               (?index x ... (- depth 1))
               (?index x ... (- depth 1)))))
 
-(define-synthax (?lane x ... depth)
+(define-synthax (?lane x ... [c ...] depth)
  #:base (choose x ... (@dup 1))
  #:else (choose
          x ... (@dup 1)
+         ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (choose (@dup c) ...))
          ((choose + -)
-          (?lane x ... (- depth 1))
-          (?lane x ... (- depth 1)))))
+          (?lane x ... [c ...] (- depth 1))
+          (?lane x ... [c ...] (- depth 1)))))
 
 (define-synthax (?warp-size-const x ... depth)
  #:base (choose x ... (??))
@@ -47,6 +49,7 @@
          (-
           (?warp-size-const x ... (- depth 1))
           (?warp-size x ... (- depth 1)))
+         (* (??) (?warp-size x ... (- depth 1)))
          ))
 
 (define-synthax ?warp-offset

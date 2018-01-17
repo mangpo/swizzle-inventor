@@ -9,13 +9,13 @@
 
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
-(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
+(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
          @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
          warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
-         accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal?
+         accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
          run-kernel)
 
 
@@ -23,7 +23,7 @@
 (define blockSize 4)
 (define blockDim (list 8))
 (define gridDim (list 1))
-(define-syntax-rule (@dup x) (for/vector ([i blockSize]) x))
+(define (@dup x) (for/vector ([i blockSize]) x))
 (define (get-blockDim) blockDim)
 (define (get-gridDim) gridDim)
 
@@ -84,6 +84,7 @@
 (define-operator @<= $<= <=)
 (define-operator @= $= =)
 (define-operator @modulo $modulo modulo)
+(define-operator @quotient $quotient quotient)
 
 
 ;(define-syntax-rule (> x y) (iterate x y p>))
@@ -384,6 +385,16 @@
      (acc=? x y #t)]
 
     [else (equal? x y)]))
+
+
+(define (acc-print x)
+  (cond
+    [(accumulator? x)
+     `(accumulator ,(accumulator-val x))]
+    [(vector? x)
+     (define ret (for/vector ([xi x]) (acc-print xi)))
+     (pretty-display ret)
+     ]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; run kernel ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
