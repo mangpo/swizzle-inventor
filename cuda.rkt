@@ -13,19 +13,22 @@
          @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
-         warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
+         warpSize set-warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
          run-kernel)
 
 
 (define warpSize 4)
-(define blockSize 4)
-(define blockDim (list 8))
+(define blockSize warpSize)
+(define blockDim (list blockSize))
 (define gridDim (list 1))
 (define (@dup x) (for/vector ([i blockSize]) x))
 (define (get-blockDim) blockDim)
 (define (get-gridDim) gridDim)
+
+(define (set-warpSize s)
+  (set! warpSize s))
 
 (define uid 0)
 (define (gen-uid)
@@ -267,7 +270,7 @@
         (for/vector ([i (vector-length lane)]) (modulo (get lane i) warpSize))
         (for/vector ([i len]) (modulo lane warpSize))))
   
-  (for ([iter (quotient (vector-length val) warpSize)])
+  (for ([iter (quotient len warpSize)])
     (let ([offset (* iter warpSize)])
       (for ([i warpSize])
         (let ([i-dest (+ offset i)]
