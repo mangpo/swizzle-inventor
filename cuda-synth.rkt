@@ -2,7 +2,7 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?cond
+(provide ?? ?index ?lane ?cond ?ite
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append)
@@ -12,17 +12,18 @@
     (choose (@dup #t)
             ((choose < <= > >= =) (choose x ...) (choose x ...)))])
   )
-
-(define-synthax (?index x ... depth)
+   
+(define-synthax (?ite x ... depth)
  #:base (choose x ... (@dup (??)))
  #:else (choose
          x ... (@dup (??))
-         ((choose + -) (?index x ... (- depth 1)) (?index x ... (- depth 1)))
+         ;;((choose + -) (?index x ... (- depth 1)) (?index x ... (- depth 1)))
          (ite (?cond x ...)
-              (?index x ... (- depth 1))
-              (?index x ... (- depth 1)))))
+              (?ite x ... (- depth 1))
+              (?ite x ... (- depth 1)))))
 
-(define-synthax (?lane x ... [c ...] depth)
+;; old
+#;(define-synthax (?lane x ... [c ...] depth)
  #:base (choose x ... (@dup 1))
  #:else (choose
          x ... (@dup 1)
@@ -30,6 +31,23 @@
          ((choose + -)
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
+
+(define-synthax (?lane x ... [c ...] depth)
+ #:base (choose x ... (@dup 1)
+                ((choose quotient *) (choose x ...) (choose (@dup c) ...)))
+ #:else (choose
+         x ... (@dup 1)
+         ((choose quotient *) (choose x ...) (choose (@dup c) ...))
+         (modulo (?lane x ... [c ...] (- depth 1)) (choose (@dup c) ...))
+         ((choose + -)
+          (?lane x ... [c ...] (- depth 1))
+          (?lane x ... [c ...] (- depth 1)))))
+
+(define-synthax ?index
+  ([(?index x ... [c ...] depth)
+    (choose (?ite x ... depth)
+            (?lane x ... [c ...] depth))])
+  )
 
 (define-synthax (?warp-size-const x ... depth)
  #:base (choose x ... (??))

@@ -290,13 +290,13 @@
 
     [else (equal? x y)]))
 
-(define (multiset-hash x)
+#;(define (multiset-hash x)
   (cond
     [(list? x)
      (foldl (lambda (xi res) (+ res (multiset-hash xi))) 0 x)]
     [else (equal-hash-code x)]))
 
-(define (multiset-hash2 x)
+#;(define (multiset-hash2 x)
   (cond
     [(list? x)
      (foldl (lambda (xi res) (+ res (multiset-hash2 xi))) 0 x)]
@@ -307,21 +307,22 @@
        (equal? (accumulator-oplist x) (accumulator-oplist y))
        (equal? (accumulator-opfinal x) (accumulator-opfinal y))))
 
-(define (acc-hash-1 x recursive-equal-hash)
+#;(define (acc-hash-1 x recursive-equal-hash)
     (+ (* 10007 (multiset-hash (accumulator-val x)))
        (* 101 (equal-hash-code (accumulator-oplist x)))
        (* 3 (equal-hash-code (accumulator-opfinal x)))))
 
-(define (acc-hash-2 x recursive-equal-hash)
+#;(define (acc-hash-2 x recursive-equal-hash)
     (+ (* 101 (multiset-hash2 (accumulator-val x)))
        (* 3 (equal-secondary-hash-code (accumulator-oplist x)))
        (* 10007 (equal-secondary-hash-code (accumulator-opfinal x)))))
 
 (struct accumulator (val oplist opfinal veclen) #:mutable
-  #:methods gen:equal+hash
-  [(define equal-proc acc=?)
+  ;; #:methods gen:equal+hash
+  #;[(define equal-proc acc=?)
    (define hash-proc  acc-hash-1)
-   (define hash2-proc acc-hash-2)])
+   (define hash2-proc acc-hash-2)]
+  )
 
 (define-syntax create-accumulator
   (syntax-rules ()

@@ -49,11 +49,11 @@
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) /3 blockDim))
 
-  (for/bounded ([i (??)])
-    (let* ([index (?index localId (@dup i) 1)]
-           [lane (?lane localId (@dup i) [warpSize] 1)]
+  (for/bounded ([i 3])
+    (let* ([index (?index localId (@dup i) [warpSize] 1)]  ;(?index localId (@dup i) 1)
+           [lane (?lane localId (@dup i) [warpSize] 1)] ;(?lane localId (@dup i) [warpSize] 1)
            [x (shfl (get I-cached index) lane)])
-      (accumulate o x #:pred (?cond localId (@dup i)))
+      (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
       ))
   
   (reg-to-global o O gid (- sizes 2))
@@ -75,11 +75,12 @@
   
   ;; 1s (conc)
   (pretty-display "solving...")
-  (define sol
+  #;(define sol
     (time
      (synthesize
       #:forall (symbolics I)
       #:guarantee (assert (acc-equal? O O*)))))
+  (define sol (time (solve (assert (acc-equal? O O*)))))
   (print-forms sol)
   )
 (synthesis)
