@@ -211,7 +211,7 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 4)))
+    (f 0 5)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
@@ -232,13 +232,13 @@
        (for ([t blockSize])
          (set new-I-reg t (clone I-reg)))
        (set! I-reg new-I-reg)
-       ;;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
+       ;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
        (for ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
                              (get-x (vector-ref offset (* warp warpSize)))
                              (vector-ref (get-x offset) (* warp warpSize)))]
                [inc-x 0])
-           ;;(pretty-display `(offset-x ,offset-x))
+           ;(pretty-display `(offset-x ,offset-x))
            (for/bounded ([it iter-x])
              (for ([t warpSize])
                (for/bounded ([my-i stride-x])

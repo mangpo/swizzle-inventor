@@ -141,5 +141,6 @@
     (let ([spec (list->set (get* warp-input-spec (cons i blockId)))])
       (for ([x spec])
         (when (member x all-inputs)
+          ;(pretty-display `(check ,i ,n ,x ,(list? (member x my-input))))
           (assert (member x my-input))))
     )))

@@ -5,8 +5,8 @@
 (define struct-size 3)
 (define n-block 2)
 
-(define (run-with-warp-size spec kernel w)
-  (set-warpSize w)
+(define (create-IO warpSize)
+  (set-warpSize warpSize)
   (define block-size (* 2 warpSize))
   (define array-size (* n-block block-size))
   (define I-sizes (x-y-z (* array-size struct-size)))
@@ -14,6 +14,11 @@
   (define I (create-matrix I-sizes gen-uid))
   (define O (create-matrix O-sizes))
   (define O* (create-matrix O-sizes))
+  (values block-size I-sizes O-sizes I O O*))
+
+(define (run-with-warp-size spec kernel w)
+  (define-values (block-size I-sizes O-sizes I O O*)
+    (create-IO w))
   
   (define c (gcd struct-size warpSize))
   (define a (/ struct-size c))
@@ -146,22 +151,23 @@
     (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test3 w)])
       (pretty-display `(test ,w ,ret))))
   )
-(test)
+;(test)
 
 ;; index depth 1, lane depth 4, ??: > 5 min
 ;; index depth 1, lane depth 4, fixed constants (a b c): 19 s
-;; warpsize 3 & 4: 122 s
-;; m = 3, warpsize 4 & 5: 125 s
 ;; m = 3, warpsize 4 & 5 + warpSize choice: 73 s
 ;; change ?lane: 20 s
+;; synthesize both load and shuffle: 30 s (8 bit), 50 s (16 bit)
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
-                 (x-y-z 1) ;(x-y-z struct-size)
-                 offset (x-y-z (* warpSize struct-size)) I-sizes #f)
+                        (x-y-z 1) ;; stride
+                        (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
+                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        I-sizes #f)
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
@@ -180,9 +186,12 @@
                                      (list 4 5))))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
-#;(define (load-synth)
+(define (load-synth)
+  (define-values (block-size I-sizes O-sizes I O O*)
+    (create-IO 4))
+  
   ;; Store
   (define (AOS-sum-store threadId blockId blockDim O)
     (define warpID (get-warpId threadId))
@@ -219,11 +228,11 @@
     )
 
   (run-kernel AOS-sum-load (x-y-z block-size) (x-y-z n-block) I warps)
-  (define sol
-    (time
+  (define sol (time (solve (assert #t))))
+    #;(time
      (synthesize
       #:forall (symbolics I)
-      #:guarantee (assert #t))))
+      #:guarantee (assert #t)))
   (when (sat? sol)
     (print-forms sol))
   )
