@@ -51,16 +51,12 @@
                         (x-y-z 1) ;; stride
                         (x-y-z (@dup 0))
                         (x-y-z warpSize)
-                        ;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
-                        ;(x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
-                        sizes #f)
+                        #f)
   (global-to-warp-reg B b-cached
                       (x-y-z 1) ;; stride
                       (x-y-z (@dup 0))
                       (x-y-z warpSize)
-                      ;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
-                      ;(x-y-z (?warp-size warpSize 1)) ;; load size
-                      sizes #f)
+                      #f)
   
   (define tidx (get-x threadId))
   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
@@ -76,8 +72,8 @@
           [b (shfl (get b-cached (@dup 0)) (- (- tidx (@dup i)) (@dup 1)) #;(- (+ (get-x sizes) tidx) (+ i 1)))])
       (accumulate acc2 (list a b) #:pred (> i tidx))))
 
-  (reg-to-global acc1 C threadId sizes)
-  (reg-to-global acc2 D threadId sizes)
+  (reg-to-global acc1 C threadId)
+  (reg-to-global acc2 D threadId)
   )
 
 (define (mult-sketch threadId blockID blockDim A B C D sizes)
@@ -92,12 +88,12 @@
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
-                        sizes #f)
+                        #f)
   (global-to-warp-reg B b-cached
                       (x-y-z (??)) ;; stride
                       (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                       (x-y-z (?warp-size warpSize 1)) ;; load size
-                      sizes #f)
+                      #f)
   ;(define tidx (get-x threadId))
   (define tidx (get-idInWarp threadId))
   (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
@@ -115,8 +111,8 @@
           )
       (accumulate acc2 (list a b) #:pred (?cond tidx (@dup i)))))
 
-  (reg-to-global acc1 C threadId sizes)
-  (reg-to-global acc2 D threadId sizes)
+  (reg-to-global acc1 C threadId)
+  (reg-to-global acc2 D threadId)
   )
 
 (define (test)
@@ -135,7 +131,7 @@
                     (list 4 5))))))
   (print-forms sol)
   )
-(synthesis)
+;(synthesis)
 
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)
@@ -148,8 +144,8 @@
       (for/vector ([w  warpID]
                    [t threadId])
         (ID t w blockId)))
-    (reg-to-global o C threadId sizes)
-    (reg-to-global o D threadId sizes)
+    (reg-to-global o C threadId)
+    (reg-to-global o D threadId)
     )
 
   ;; Run spec -- already ran
@@ -180,12 +176,12 @@
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
-                        sizes #f)
+                        #f)
     (global-to-warp-reg B B-cached
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
-                        sizes #f)
+                        #f)
     ;; sketch ends
     (check-warp-input C-warp-spec A A-cached warpId blockId)
     (check-warp-input D-warp-spec A A-cached warpId blockId)
@@ -201,4 +197,4 @@
       #:guarantee (assert #t))))
   (print-forms sol)
   )
-;(load-synth)
+(load-synth)

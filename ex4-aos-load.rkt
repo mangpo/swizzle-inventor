@@ -44,7 +44,7 @@
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z struct-size)
-                 offset (x-y-z (* warpSize struct-size)) I-sizes #f)
+                 offset (x-y-z (* warpSize struct-size)) #f)
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
@@ -54,7 +54,7 @@
            [x (shfl (get I-cached index) lane)])
       (accumulate o x)
       ))
-  (reg-to-global o O gid O-sizes)
+  (reg-to-global o O gid)
   )
 
 (define (AOS-sum-fast threadId blockID blockDim I O I-sizes O-sizes a b c)
@@ -64,7 +64,7 @@
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z 1)
-                 offset (x-y-z (* warpSize struct-size)) I-sizes #f)
+                 offset (x-y-z (* warpSize struct-size)) #f)
   ;(pretty-display `(I-cached ,I-cached))
 
   (define localId (get-idInWarp threadId))
@@ -76,7 +76,7 @@
       ;(pretty-display `(lane ,lane))
       (accumulate o x)
       ))
-  (reg-to-global o O gid O-sizes)
+  (reg-to-global o O gid)
   )
 
 (define (AOS-sum-test2 threadId blockID blockDim I O I-sizes O-sizes a b c)
@@ -91,7 +91,6 @@
     (x-y-z 1)
     offset
     (x-y-z (* warpSize struct-size))
-    I-sizes
     #f)
    (define localId (get-idInWarp threadId))
    (define o (create-accumulator o (list +) identity blockDim))
@@ -108,7 +107,7 @@
               (@dup struct-size))))
            (x (shfl (get I-cached index) lane)))
       (accumulate o x #:pred (@dup #t))))
-   (reg-to-global o O gid O-sizes))
+   (reg-to-global o O gid))
 
 (define (AOS-sum-test3 threadId blockID blockDim I O I-sizes O-sizes a b c)
    (define I-cached (create-matrix (x-y-z struct-size)))
@@ -122,7 +121,6 @@
     (x-y-z 1)
     offset
     (x-y-z (* warpSize struct-size))
-    I-sizes
     #f)
    (define localId (get-idInWarp threadId))
    (define o (create-accumulator o (list +) identity blockDim))
@@ -144,7 +142,7 @@
               (+ (* localId (@dup warpSize)) (* localId (@dup c))))))
            (x (shfl (get I-cached index) lane)))
       (accumulate o x #:pred (= localId localId))))
-   (reg-to-global o O gid O-sizes))
+   (reg-to-global o O gid))
 
 (define (test)
   (for ([w (list 5 32)])
@@ -167,7 +165,7 @@
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
-                        I-sizes #f)
+                        #f)
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
@@ -177,7 +175,7 @@
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
-  (reg-to-global o O gid O-sizes)
+  (reg-to-global o O gid)
   )
 
 (define (synthesis)
@@ -199,7 +197,7 @@
       (for/vector ([w  warpID]
                    [t threadId])
         (ID t w blockId)))
-    (reg-to-global o O (get-global-threadId threadId blockId) O-sizes)
+    (reg-to-global o O (get-global-threadId threadId blockId))
     )
   
   ;; Run spec
@@ -222,7 +220,7 @@
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
-                        I-sizes #f)
+                        #f)
     ;; sketch ends
     (check-warp-input warp-input-spec I I-cached warpId blockId)
     )

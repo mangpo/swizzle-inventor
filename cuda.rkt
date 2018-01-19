@@ -98,9 +98,8 @@
 ;(define-syntax-rule (modulo x y) (iterate x y p-modulo))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define (global-to-shared I I-shared pattern offset sizes
-                          #:bounds [bounds (for/list ([i (length sizes)]) 1000000000)]
-                          #:transpose [transpose #f])
+(define (global-to-shared I I-shared pattern offset sizes #:transpose [transpose #f])
+  (define bounds (get-dims I))
   (cond
     [(= (length offset) 1)
      (let ([size-x (get-x sizes)]
@@ -140,9 +139,8 @@
                (set I-shared x y z (get I (+ offset-x x) (+ offset-y y) (+ offset-z z)))))))]
     ))
 
-(define (shared-to-global I-shared I pattern offset sizes 
-                          #:bounds [bounds (for/list ([i (length sizes)]) 1000000000)]
-                          #:transpose [transpose #f])
+(define (shared-to-global I-shared I pattern offset sizes #:transpose [transpose #f])
+  (define bounds (get-dims I))
   (cond
     [(= (length offset) 1)
      (let ([size-x (get-x sizes)]
@@ -183,8 +181,9 @@
     ))
 
 (define-syntax-rule
-  (global-to-reg I I-reg offset bounds)
-  (let* ([blockSize (vector-length offset)]
+  (global-to-reg I I-reg offset)
+  (let* ([bounds (get-dims I)]
+         [blockSize (vector-length offset)]
          [new-I-reg (make-vector blockSize #f)])
     (for ([t blockSize])
       (set new-I-reg t (clone I-reg)))
@@ -195,8 +194,9 @@
         (set I-reg i (get* I global-i))))))
 
 (define-syntax-rule
-  (reg-to-global I-reg I offset bounds)
-  (let* ([blockSize (vector-length offset)])
+  (reg-to-global I-reg I offset)
+  (let* ([bounds (get-dims I)]
+         [blockSize (vector-length offset)])
     (for ([i blockSize]
           [global-i offset])
       (when (for/and ([b bounds] [i global-i]) (< i b))
@@ -218,11 +218,10 @@
 ;; stride-x = how many elements belong to a thread in one round.
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
 (define-syntax-rule 
-  (global-to-warp-reg I I-reg pattern offset sizes bounds transpose)
+  (global-to-warp-reg I I-reg pattern offset sizes transpose)
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
-            [bound-x (get-x bounds)]
             [stride-x (get-x pattern)]
             [blockSize (apply * blockDim)]
             [iter-x (add1 (quotient (sub1 size-x) (* warpSize stride-x)))]
@@ -244,7 +243,6 @@
                (for/bounded ([my-i stride-x])
                  (when (and (< inc-x size-x)
                             (< (+ offset-x inc-x) I-len)
-                            (< (+ offset-x inc-x) bound-x)
                             (< (+ my-i (* it stride-x)) I-reg-len)
                             )
                    (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block

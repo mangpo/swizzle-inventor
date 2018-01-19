@@ -15,6 +15,13 @@
           vec)))
   (f (reverse dims)))
 
+(define (get-dims M)
+  (define (f M)
+    (if (vector? M)
+        (cons (vector-length M) (f (vector-ref M 0)))
+        (list)))
+  (reverse (f M)))
+
 (define (my-vector-ref vec index)
   (cond
     [(and (vector? index)

@@ -38,7 +38,7 @@
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z 1)
-                 offset (x-y-z (+ warpSize 2)) I-sizes #f)
+                 offset (x-y-z (+ warpSize 2)) #f)
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) /3 blockDim))
@@ -48,7 +48,7 @@
            [x (shfl (get I-cached index) lane)])
       (accumulate o x)
       ))
-  (reg-to-global o O gid O-sizes)
+  (reg-to-global o O gid)
   )
 
 (define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
@@ -60,7 +60,7 @@
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
-                        I-sizes #f)
+                        #f)
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) /3 blockDim))
@@ -72,7 +72,7 @@
       (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
       ))
   
-  (reg-to-global o O gid O-sizes)
+  (reg-to-global o O gid)
   )
 
 (define (test)
@@ -91,7 +91,7 @@
                     (list 4 5))))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
 (define (load-synth)
   (define-values (block-size I-sizes O-sizes I O O*)
@@ -104,7 +104,7 @@
       (for/vector ([w  warpID]
                    [t threadId])
         (ID t w blockId)))
-    (reg-to-global o O (get-global-threadId threadId blockId) O-sizes)
+    (reg-to-global o O (get-global-threadId threadId blockId))
     )
   
   ;; Run spec
@@ -127,7 +127,7 @@
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
-                        I-sizes #f)
+                        #f)
     
     ;; sketch ends
     (check-warp-input warp-input-spec I I-cached warpId blockId)
@@ -146,4 +146,4 @@
           (pretty-display `(v ,key ,val ,(string-contains? (format "~a" key) "stencil:113")))))
       ))
   )
-(load-synth)
+;(load-synth)

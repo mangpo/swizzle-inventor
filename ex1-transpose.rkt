@@ -21,12 +21,10 @@
   (global-to-shared I I-shared
                     (x-y-z 1 1)
                     offset blockDim
-                    #:bounds (x-y-z 5 5)
                     #:transpose #t)
   (shared-to-global I-shared O
                     (x-y-z 1 1)
-                    (reverse offset) (reverse blockDim)
-                    #:bounds (x-y-z 5 5))
+                    (reverse offset) (reverse blockDim))
   )
 
 (define (transpose2 threadId blockID blockDim I O)
@@ -36,12 +34,10 @@
   (global-to-shared I I-shared
                     (x-y-z 1 1)
                     offset tileDim
-                    #:bounds (x-y-z 5 5)
                     #:transpose #t)
   (shared-to-global I-shared O
                     (x-y-z 1 1)
-                    (reverse offset) (reverse tileDim)
-                    #:bounds (x-y-z 5 5))
+                    (reverse offset) (reverse tileDim))
   )
 
 ;;(run-kernel transpose1 (x-y-z 2 2) (x-y-z 3 3) I O*)
