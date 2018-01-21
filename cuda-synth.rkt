@@ -5,7 +5,8 @@
 (provide ?? ?index ?lane ?cond ?ite
          ?warp-size ?warp-offset
          print-forms choose
-         ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append)
+         ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
+         gen-lane? interpret-lane print-lane inst)
 
 (define-synthax ?cond
   ([(?cond x ...)
@@ -23,7 +24,7 @@
               (?ite x ... (- depth 1)))))
 
 ;; old
-#;(define-synthax (?lane x ... [c ...] depth)
+(define-synthax (?lane x ... [c ...] depth)
  #:base (choose x ... (@dup 1))
  #:else (choose
          x ... (@dup 1)
@@ -32,7 +33,7 @@
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
 
-(define-synthax (?lane x ... [c ...] depth)
+#;(define-synthax (?lane x ... [c ...] depth)
  #:base (choose x ... (@dup 1)
                 ((choose quotient *) (choose x ...) (choose (@dup c) ...)))
  #:else (choose
@@ -74,6 +75,121 @@
   ([(?warp-offset [id size] ...)
     (+ (??) (* (??) id size) ...)])
   )
+
+;;;;;;;;;;;;;;;;; alternate encoding ;;;;;;;;;;;;;;;;;;;
+
+(struct inst (op args))
+(define opcodes '#((+ v cc)
+                   (+ v v)
+                   (+ y cc)
+                   (+ y v)
+                   (+ y x)
+
+                   (- v cc)
+                   (- cc v)
+                   (- v v)
+                   (- y cc)
+                   (- cc y)
+                   (- y v)
+                   (- v y)
+                   (- y x)
+                   (- x y)
+
+                   (* v c)
+                   (* y c)
+                   (quotient v c)
+                   (quotient y c)
+                   (modulo v c)
+                   (modulo y c)))
+(define default-consts '#(1))
+
+(define (gen-lane? n)
+  (define (gen-sym)
+    (define-symbolic* x integer?)
+    x)
+  (define (gen-inst) (inst (gen-sym) (vector (gen-sym) (gen-sym))))
+  (for/vector ([i n]) (gen-inst)))
+
+(define (print-lane name prog vars consts)
+  (define len (vector-length prog))
+  (define consts-ext (vector-append consts default-consts))
+
+  (define (print-inst i p)
+    (define inst (vector-ref opcodes (inst-op p)))
+    (define op (car inst))
+    (define args-type (cdr inst))
+    (define args (inst-args p))
+
+    (define args-str
+      (for/list ([type args-type]
+                 [arg args])
+        (cond
+            [(equal? type 'c)  (vector-ref consts arg)]
+            [(equal? type 'cc) (vector-ref consts-ext arg)]
+            [(equal? type 'v)  (vector-ref vars arg)]
+            [(equal? type 'y)  (string->symbol (format "x~a" (sub1 i)))]
+            [(equal? type 'x)  (string->symbol (format "x~a" arg))])))
+
+    (pretty-display (format "[x~a ~a]" i (cons op args-str)))
+    )
+
+  (pretty-display (format "~a:" name))
+  (for ([p prog] [i (in-naturals)]) (print-inst i p))
+  (pretty-display (format "[~a x~a]" name (sub1 len)))
+  )
+
+(define (interpret-lane prog vars consts)
+  (define len (vector-length prog))
+  (define consts-ext (vector-append consts default-consts))
+  (define intermediates (make-vector len #f))
+
+  (define (interpret-inst i p)
+    ;(pretty-display `(interpret-inst ,i ,p))
+    (define inst (vector-ref opcodes (inst-op p)))
+    (define op (car inst))
+    (define args-type (cdr inst))
+    (define args (inst-args p))
+    ;(pretty-display `(op ,op ,args-type ,args))
+
+    (define (exe f)
+      (define operands
+        (for/list ([type args-type]
+                   [arg args])
+          ;(pretty-display `(operand ,type ,arg))
+          (cond
+            [(equal? type 'c)  (@dup (vector-ref consts arg))]
+            [(equal? type 'cc) (@dup (vector-ref consts-ext arg))]
+            [(equal? type 'v)  (vector-ref vars arg)]
+            [(equal? type 'y)  (vector-ref intermediates (sub1 i))]
+            [(equal? type 'x)  (if (< arg i) (vector-ref intermediates arg) (assert #f))])))
+      (define res (apply f operands))
+      ;(pretty-display `(res ,i ,res ,intermediates))
+      (vector-set! intermediates i res)
+      ;(pretty-display `(intermediates ,intermediates))
+      )
+
+    (define-syntax op-eq
+      (syntax-rules ()
+        ((op-eq x) (equal? x op))
+        ((op-eq a b ...) (or (inst-eq a) (inst-eq b) ...))))
+    
+    (cond
+      [(op-eq '+) (exe +)]
+      [(op-eq '-) (exe -)]
+      [(op-eq '*) (exe *)]
+      [(op-eq 'quotient) (exe quotient)]
+      [(op-eq 'modulo)   (exe modulo)]
+      [else (assert #f)]
+      )
+    )
+
+  (for ([p prog] [i (in-naturals)])
+    (interpret-inst i p))
+  (define ret (vector-ref intermediates (sub1 len)))
+  ;(pretty-display `(ret ,ret ,intermediates ,(sub1 len)))
+  ret
+  )
+  
 
 ;;;;;;;;;;;;;;;;; load synthesis ;;;;;;;;;;;;;;;;;;;;
 (struct ID (thread warp block))

@@ -12,7 +12,7 @@
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
          @dup gen-uid for/bounded
          define-shared
-         global-to-shared shared-to-global global-to-warp-reg global-to-reg reg-to-global
+         global-to-shared shared-to-global global-to-warp-reg warp-reg-to-global global-to-reg reg-to-global
          warpSize set-warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
@@ -248,6 +248,44 @@
                    (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
                         (+ my-i (* it stride-x)) ;; local index
                         (vector-ref I (+ offset-x inc-x)))
+                   )
+                 (set! inc-x (+ inc-x 1)))))
+           )))
+     ]
+
+    ;; TODO
+    [else (raise "unimplemented")]
+    ))
+
+(define-syntax-rule 
+  (warp-reg-to-global I-reg I pattern offset sizes transpose)
+  (cond
+    [(= (length blockDim) 1)
+     (let* ([size-x (get-x sizes)]
+            [stride-x (get-x pattern)]
+            [blockSize (apply * blockDim)]
+            [iter-x (add1 (quotient (sub1 size-x) (* warpSize stride-x)))]
+            [I-len (vector-length I)]
+            [I-reg-len (vector-length I-reg)]
+            [new-I-reg (make-vector blockSize #f)])
+       ;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
+       (for ([warp (quotient blockSize warpSize)])
+         (let ([offset-x (if (vector? offset)
+                             (get-x (vector-ref offset (* warp warpSize)))
+                             (vector-ref (get-x offset) (* warp warpSize)))]
+               [inc-x 0])
+           ;(pretty-display `(offset-x ,offset-x))
+           (for/bounded ([it iter-x])
+             (for ([t warpSize])
+               (for/bounded ([my-i stride-x])
+                 (when (and (< inc-x size-x)
+                            (< (+ offset-x inc-x) I-len)
+                            (< (+ my-i (* it stride-x)) I-reg-len)
+                            )
+                   (vector-set! I (+ offset-x inc-x)
+                                (vector-ref
+                                 (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
+                                 (+ my-i (* it stride-x)))) ;; local index
                    )
                  (set! inc-x (+ inc-x 1)))))
            )))

@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 4)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -149,7 +149,7 @@
     (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test3 w)])
       (pretty-display `(test ,w ,ret))))
   )
-;(test)
+(test)
 
 ;; index depth 1, lane depth 4, ??: > 5 min
 ;; index depth 1, lane depth 4, fixed constants (a b c): 19 s
@@ -170,8 +170,8 @@
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
   (for/bounded ([i (??)])
-    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 1) struct-size)]  ; (?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 3)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]  ; (?index localId (@dup i) 1)
+           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
@@ -181,7 +181,7 @@
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
-                                     (list 4 5))))))
+                                     (list 4))))))
   (print-forms sol)
   )
 (synthesis)
