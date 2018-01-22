@@ -52,22 +52,20 @@
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                  (x-y-z 1)
-                 ;;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize]))
                  offset
                  (x-y-z (* warpSize struct-size)) #f)
 
-  (define localId (get-idInWarp threadId))
+  (define j (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* ([p (modulo (- i localId) struct-size)]
+    (let* ([p (modulo (- i j) struct-size)]
            [b-inv 1]
            [q1 (modulo (* b-inv (quotient (+ (- c 1) p) c)) a)]
-           [index (modulo (+ q1 (* (modulo (* (- c 1) p) c) a)) struct-size)]
-           ;[q1 (modulo (quotient (+ (- c 1) i) c) a)]
-           ;[q (+ q1 (* (modulo (* (- c 1) i) c) a))]
-           ;[index (modulo (- q localId) struct-size)]  ; (?index localId (@dup i) 1)
-           [lane (+ (modulo (+ i (quotient localId b)) struct-size) (* localId struct-size))]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+           [q2 (* (modulo (* (- c 1) p) c) a)]
+           [index (modulo (+ q1 q2) struct-size)] ;; step 1 (column shuffle): index = s-inv(i)
+           [lane (+ (modulo (+ i (quotient j b)) struct-size) (* j struct-size))]  ;; step 2 (row shuffle): lane = d'(j)
            [x (shfl (get I-cached index) lane)]
-           [index-o (modulo (+ i (quotient localId b)) struct-size)])
+           [index-o (modulo (+ i (quotient j b)) struct-size)] ;; step 3 (column rotate): index-o = r(i)
+           )
       (pretty-display `(index-i ,index))
       (pretty-display `(lane ,lane))
       (pretty-display `(x ,x))
@@ -78,7 +76,6 @@
   
   (warp-reg-to-global O-cached O
                       (x-y-z 1)
-                      ;;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize]))
                       offset
                       (x-y-z (* warpSize struct-size)) #f)
   )

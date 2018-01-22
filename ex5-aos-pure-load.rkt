@@ -93,8 +93,11 @@
 
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 6) struct-size)]  ; (?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+    (let* ([p (?lane localId (@dup i) [a b c struct-size warpSize] 2)] ; [a b c struct-size warpSize]
+           [q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
+           [q2 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
+           [index (modulo (?index localId (@dup i) q1 q2 [a b c struct-size warpSize] 1) struct-size)] 
+           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            [x (shfl (get I-cached index) lane)]
            [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)])
       (set O-cached index-o x))
@@ -108,7 +111,7 @@
   )
 
 (define (test)
-  (for ([w (list 3 4 5 6)])
+  (for ([w (list 2)])
     (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test w)])
       (pretty-display `(test ,w ,ret))))
   )
@@ -117,7 +120,7 @@
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
-                                           (list 4 6))))))
+                                           (list 2 4))))))
   (print-forms sol)
   )
 (synthesis)

@@ -102,10 +102,15 @@
 
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 4) struct-size)]  ; (?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+    (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 4) struct-size)]  ; (?index localId (@dup i) 1)
+           ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+           [index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
+           [p (?lane localId (@dup i) [a b c struct-size warpSize] 2)]
+           [q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
+           [q2 (?lane localId (@dup i) p q1 [a b c struct-size warpSize] 4)]
+           [lane (?lane localId (@dup i) p q1 q2 [a b c struct-size warpSize] 1)]
            [x (shfl (get I-cached index) lane)]
-           [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 4) struct-size)])
+           [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 3) struct-size)])
       (set O-cached index-o x))
       )
   

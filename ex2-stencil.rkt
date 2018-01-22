@@ -79,7 +79,7 @@
 
   (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) [warpSize] 1)]  ;(?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [warpSize] 2)] ;(?lane localId (@dup i) [warpSize] 1)
+           [lane (?lane localId (@dup i) [warpSize] 1)] ;(?lane localId (@dup i) [warpSize] 1)
            ;[lane (interpret-lane my-lane (vector localId (@dup i)) (vector))]
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
