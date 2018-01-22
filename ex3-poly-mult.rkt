@@ -76,6 +76,10 @@
   (reg-to-global acc2 D threadId)
   )
 
+(define my-lane-a1 (gen-lane? 2))
+(define my-lane-b1 (gen-lane? 2))
+(define my-lane-a2 (gen-lane? 2))
+(define my-lane-b2 (gen-lane? 2))
 (define (mult-sketch threadId blockID blockDim A B C D sizes)
   (define warpId (get-warpId threadId))
   ;(define a-cached #f)
@@ -91,8 +95,8 @@
                         #f)
   (global-to-warp-reg B b-cached
                       (x-y-z (??)) ;; stride
-                      (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
-                      (x-y-z (?warp-size warpSize 1)) ;; load size
+                        (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
+                        (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                       #f)
   ;(define tidx (get-x threadId))
   (define tidx (get-idInWarp threadId))
@@ -100,14 +104,22 @@
   (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
 
   (for/bounded ([i (choose warpSize (??))])
-    (let ([a (shfl (get a-cached (@dup 0)) (?lane tidx (@dup i) [warpSize] 2))]
-          [b (shfl (get b-cached (@dup 0)) (?lane tidx (@dup i) [warpSize] 2))]
+    (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
+           ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
+           [lane-a (interpret-lane my-lane-a1 (vector tidx (@dup i)) (vector warpSize))]
+           [lane-b (interpret-lane my-lane-b1 (vector tidx (@dup i)) (vector warpSize))]
+           [a (shfl (get a-cached (@dup 0)) lane-a)]
+           [b (shfl (get b-cached (@dup 0)) lane-b)]
           )
       (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
   
   (for/bounded ([i (choose warpSize (??))])
-    (let ([a (shfl (get a-cached (@dup 0)) (?lane tidx (@dup i) [warpSize] 2))]
-          [b (shfl (get b-cached (@dup 0)) (?lane tidx (@dup i) [warpSize] 2))]
+    (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
+           ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
+           [lane-a (interpret-lane my-lane-a2 (vector tidx (@dup i)) (vector warpSize))]
+           [lane-b (interpret-lane my-lane-b2 (vector tidx (@dup i)) (vector warpSize))]
+           [a (shfl (get a-cached (@dup 0)) lane-a)]
+           [b (shfl (get b-cached (@dup 0)) lane-b)]
           )
       (accumulate acc2 (list a b) #:pred (?cond tidx (@dup i)))))
 
@@ -122,6 +134,9 @@
   )
 ;(test)
 
+;; warp size 4, concrete load: 2 s
+;; warp size 4 & 5, concrete load: 7 s
+;; warp size 4 & 5, synth load: 5/9 s
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
@@ -131,7 +146,7 @@
                     (list 4 5))))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)
@@ -197,4 +212,4 @@
       #:guarantee (assert #t))))
   (print-forms sol)
   )
-(load-synth)
+;(load-synth)

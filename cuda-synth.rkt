@@ -79,7 +79,7 @@
 ;;;;;;;;;;;;;;;;; alternate encoding ;;;;;;;;;;;;;;;;;;;
 
 (struct inst (op args))
-(define opcodes '#((+ v cc)
+#;(define opcodes '#((+ v cc)
                    (+ v v)
                    (+ y cc)
                    (+ y v)
@@ -101,6 +101,9 @@
                    (quotient y c)
                    (modulo v c)
                    (modulo y c)))
+(define opcodes '#(+:vv +:vc
+                        -:vv -:vc -:cv
+                        *:vc quotient:vc modulo:vc))
 (define default-consts '#(1))
 
 (define (gen-lane? n)
@@ -138,20 +141,21 @@
   (pretty-display (format "[~a x~a]" name (sub1 len)))
   )
 
-(define (interpret-lane prog vars consts)
+#;(define (interpret-lane prog vars consts)
   (define len (vector-length prog))
   (define consts-ext (vector-append consts default-consts))
   (define intermediates (make-vector len #f))
 
   (define (interpret-inst i p)
-    ;(pretty-display `(interpret-inst ,i ,p))
+    (pretty-display `(interpret-inst ,i ,p))
     (define inst (vector-ref opcodes (inst-op p)))
     (define op (car inst))
     (define args-type (cdr inst))
     (define args (inst-args p))
-    ;(pretty-display `(op ,op ,args-type ,args))
+    (pretty-display `(op ,op))
 
     (define (exe f)
+      (pretty-display `(exe ,f))
       (define operands
         (for/list ([type args-type]
                    [arg args])
@@ -162,8 +166,13 @@
             [(equal? type 'v)  (vector-ref vars arg)]
             [(equal? type 'y)  (vector-ref intermediates (sub1 i))]
             [(equal? type 'x)  (if (< arg i) (vector-ref intermediates arg) (assert #f))])))
-      (define res (apply f operands))
-      ;(pretty-display `(res ,i ,res ,intermediates))
+      (pretty-display `(before apply ,operands))
+      ;;(define res (apply f operands))
+      (define res
+      (for*/all ([x (first operands)] [y (second operands)])
+        (f x y)))
+      ;;(define res (f (first operands) (second operands)))
+      (pretty-display `(res ,i))
       (vector-set! intermediates i res)
       ;(pretty-display `(intermediates ,intermediates))
       )
@@ -179,6 +188,60 @@
       [(op-eq '*) (exe *)]
       [(op-eq 'quotient) (exe quotient)]
       [(op-eq 'modulo)   (exe modulo)]
+      [else (assert #f)]
+      )
+    )
+
+  (for ([p prog] [i (in-naturals)])
+    (interpret-inst i p))
+  (define ret (vector-ref intermediates (sub1 len)))
+  ;(pretty-display `(ret ,ret ,intermediates ,(sub1 len)))
+  ret
+  )
+
+(define (interpret-lane prog vars consts)
+  (define len (vector-length prog))
+  (define consts-ext (vector-append consts default-consts))
+  (define intermediates (vector-append (make-vector len #f) vars))
+
+  (define (interpret-inst i p)
+    ;(pretty-display `(interpret-inst ,i ,p))
+    (define op (vector-ref opcodes (inst-op p)))
+    (define args (inst-args p))
+    ;(pretty-display `(op ,op))
+
+    (define (vv f)
+      (define a (vector-ref intermediates (vector-ref args 0)))
+      (define b (vector-ref intermediates (vector-ref args 1)))
+      (f a b))
+
+    (define (vc f)
+      (define a (vector-ref intermediates (vector-ref args 0)))
+      (define b (vector-ref consts-ext (vector-ref args 1)))
+      (f a b))
+
+    (define (cv f)
+      (define a (vector-ref consts-ext (vector-ref args 0)))
+      (define b (vector-ref intermediates (vector-ref args 1)))
+      (f a b))
+
+    (define (exe compute f)
+      (vector-set! intermediates i (compute f)))
+
+    (define-syntax op-eq
+      (syntax-rules ()
+        ((op-eq x) (equal? x op))
+        ((op-eq a b ...) (or (inst-eq a) (inst-eq b) ...))))
+    
+    (cond
+      [(op-eq '+:vv) (exe vv +)]
+      [(op-eq '+:vc) (exe vc +)]
+      [(op-eq '-:vv) (exe vv -)]
+      [(op-eq '-:vc) (exe vc -)]
+      [(op-eq '-:cv) (exe cv -)]
+      [(op-eq '*:vc) (exe vc *)]
+      [(op-eq 'quotient:vc) (vc quotient)]
+      [(op-eq 'modulo:vc)   (vc modulo)]
       [else (assert #f)]
       )
     )
