@@ -113,7 +113,10 @@
 ;; warpSize 2 4, bv, constrain row permute: 43/596 s
 ;; warpSize 4 8, bv, constrain row permute: 287/9840 s (still wrong for 32)
 ;; warpSize 32, bv, constrain row permute, depth 4/4/2: 76/1681 s
-;; warpSize 32, constrain row permute, depth 3/4/2: 500/2817 s
+
+;; warpSize 32, depth 3/4/2: 142/4661 s
+;; warpSize 32, depth 3/4/2, constrain row permute: 500/2817 s
+;; warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 89/2518 s
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
   (define log-a (bvlog a))
   (define log-b (bvlog b))
@@ -132,6 +135,8 @@
                  offset
                  (x-y-z (* warpSize struct-size)) #f)
 
+  (define indices (make-vector struct-size))
+  (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
     (let* (;[p (?lane localId (@dup i) [a b c struct-size warpSize] 2)] ; [a b c struct-size warpSize]
@@ -154,9 +159,15 @@
            ;[index-o (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 2) log-m))]
            )
       (unique-warp (modulo lane warpSize))
+      (vector-set! indices i index)
+      (vector-set! indices-o i index-o)
       (set O-cached index-o x))
-    (pretty-display `(i ,i))
-      )
+    )
+  (for ([t blockSize])
+    (let ([l (for/list ([i struct-size]) (vector-ref (vector-ref indices i) t))]
+          [lo (for/list ([i struct-size]) (vector-ref (vector-ref indices-o i) t))])
+      (unique-list l)
+      (unique-list lo)))
   
   (warp-reg-to-global O-cached O
                       (x-y-z 1)
@@ -170,7 +181,7 @@
     (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test w)])
       (pretty-display `(test ,w ,ret))))
   )
-(test)
+;(test)
 
 (define (synthesis)
   (pretty-display "solving...")
@@ -178,5 +189,5 @@
                                            (list 32))))))
   (print-forms sol)
   )
-;(synthesis)
+(synthesis)
 

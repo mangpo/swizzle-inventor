@@ -179,7 +179,7 @@
    (reg-to-global o O gid))
 
 
-;; fix loop bound
+;; fix loop bound, synth load
 ;; m = 2, warpsize = 4 8: 16/62 s ***
 ;; m = 2, warpsize = 4 8, ref: 19/98 s
 ;; m = 2, warpsize = 4 8, constraint row permute: 12/127 s
@@ -198,9 +198,11 @@
 ;; m = 2, warpsize = 4 8, bv, constraint row permute, distinct?, ref: 27/53 s
 ;; m = 2, warpsize = 4 8, bv, constraint col+row permute, ref: 15/27 s
 
-;; m = 3, warpsize = 32: error
-;; m = 3, warpsize = 32, constraint col+row permute, distinct?: error
+;; m = 3, warpsize = 32: fail when BW=8, need BW>=10
 
+;; fix load
+;; m = 3, warpsize = 32: 71/155
+;; m = 3, warpsize = 32, constraint col+row permute, distinct?: 33/140
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   #|
   (define log-a (bvlog a))
@@ -216,8 +218,10 @@
   (define gid (get-global-threadId threadId blockID))
   (global-to-warp-reg I I-cached
                         (x-y-z 1) ;; stride
-                        (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
-                        (x-y-z (?warp-size warpSize 1)) ;; load size
+                        ;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
+                        (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
+                        ;(x-y-z (?warp-size warpSize 1)) ;; load size
+                        (x-y-z (* warpSize struct-size))
                         #f)
 
   (define localId (get-idInWarp threadId))
@@ -229,8 +233,8 @@
            ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2) log-m))]
            ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
            [x (shfl (get I-cached index) lane)])
-      (unique-warp (modulo lane warpSize))
-      ;(vector-set! indices i index)
+      ;(unique-warp (modulo lane warpSize))
+      (vector-set! indices i index)
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
   #;(for ([t blockSize])
@@ -253,7 +257,7 @@
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
-                                     (list 4 8))))))
+                                     (list 32))))))
   (print-forms sol)
   )
 (synthesis)
