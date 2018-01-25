@@ -98,9 +98,10 @@
 ;; warp size 4, concrete load: 2 s
 ;; warp size 4, synth load: 6 s
 ;; warp size 4 & 5, synth load: 5/14 s
+;; warp size 4 & 5, synth load, ref: 18/26 s
+
 ;; warp size 4 & 5, synth load, lane custom: 15/23 s
 ;; warp size 4 & 5, synth load, lane custom2: 11/15 s
-
 ;; warp size 4 & 5, synth load, lane depth2: 7/21 s
 ;; warp size 4 & 5, synth load, lane depth2 custom2: symbolic eval is very slow
 (define (synthesis)

@@ -2,11 +2,11 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?cond ?ite
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?cond ?ite
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
-         gen-lane? interpret-lane print-lane inst)
+         gen-lane? interpret-lane print-lane inst unique unique-warp unique-list)
 
 (define-synthax ?cond
   ([(?cond x ...)
@@ -23,23 +23,29 @@
               (?ite x ... (- depth 1))
               (?ite x ... (- depth 1)))))
 
-;; old
+(define-synthax (?lane-log x ... [c ...] depth)
+ #:base (choose x ... (@dup (bv 1 BW)))
+ #:else (choose
+         x ... (@dup (bv 1 BW))
+         ((choose bvshl bvlshr extract) (?lane-log x ... [c ...] (- depth 1)) (choose c ...))
+         ((choose bvadd bvsub)
+          (?lane-log x ... [c ...] (- depth 1))
+          (?lane-log x ... [c ...] (- depth 1)))))
+
+(define-synthax (?lane-log-bv x ... [c ...] depth)
+ #:base (choose x ... (@dup (bv 1 BW)))
+ #:else (choose
+         x ... (@dup (bv 1 BW))
+         ((choose bvshl bvlshr extract) (?lane-log-bv x ... [c ...] (- depth 1)) (choose (bv c BW) ...))
+         ((choose bvadd bvsub)
+          (?lane-log-bv x ... [c ...] (- depth 1))
+          (?lane-log-bv x ... [c ...] (- depth 1)))))
+
 (define-synthax (?lane x ... [c ...] depth)
  #:base (choose x ... (@dup 1))
  #:else (choose
          x ... (@dup 1)
          ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (choose (@dup c) ...))
-         ((choose + -)
-          (?lane x ... [c ...] (- depth 1))
-          (?lane x ... [c ...] (- depth 1)))))
-
-#;(define-synthax (?lane x ... [c ...] depth)
- #:base (choose x ... (@dup 1)
-                ((choose quotient *) (choose x ...) (choose (@dup c) ...)))
- #:else (choose
-         x ... (@dup 1)
-         ((choose quotient *) (choose x ...) (choose (@dup c) ...))
-         (modulo (?lane x ... [c ...] (- depth 1)) (choose (@dup c) ...))
          ((choose + -)
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
@@ -323,3 +329,39 @@
           ;(pretty-display `(check ,i ,n ,x ,(list? (member x my-input))))
           (assert (member x my-input))))
     )))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;; constraint ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#;(define (unique-warp lane)
+  ;(pretty-display `(unique-warp ,lane))
+  (define len (vector-length lane))
+  (for ([o (quotient len warpSize)])
+    (let ([offset (* o warpSize)])
+      (for ([i warpSize])
+        (let ([x (vector-ref lane (+ offset i))])
+          (for ([j (range (add1 i) warpSize)])
+            (let ([y (vector-ref lane (+ offset j))])
+              ;(pretty-display `(xy ,(+ offset i) ,(+ offset j) ,x ,y))
+              (assert (not (= x y))))))))))
+
+(define (unique-warp lane)
+  ;(pretty-display `(unique-warp ,lane))
+  (define len (vector-length lane))
+  (for ([o (quotient len warpSize)])
+    (let ([offset (* o warpSize)])
+      (let ([l (for/list ([i warpSize])
+                 (vector-ref lane (+ offset i)))])
+        (apply distinct? l)))))
+
+(define (unique lane)
+  ;(pretty-display `(unique ,lane))
+  (define len (vector-length lane))
+  (for ([i len])
+    (let ([x (vector-ref lane i)])
+      (for ([j (range (add1 i) len)])
+        (let ([y (vector-ref lane j)])
+          ;(pretty-display `(xy ,(+ offset i) ,(+ offset j) ,x ,y))
+          (assert (not (= x y))))))))
+
+(define (unique-list l)
+  (apply distinct? l))

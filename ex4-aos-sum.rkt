@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 4)
+(define struct-size 3)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -58,6 +58,12 @@
   )
 
 (define (AOS-sum-fast threadId blockID blockDim I O I-sizes O-sizes a b c)
+  (define log-a (bvlog a))
+  (define log-b (bvlog b))
+  (define log-c (bvlog c))
+  (define log-m (bvlog struct-size))
+  (define log-n (bvlog warpSize))
+  
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
@@ -69,17 +75,33 @@
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
+  (define indices (make-vector struct-size))
   (for ([i struct-size])
     (let* ([index (modulo (+ i localId) struct-size)]
+           ;[index (@int (extract (bvadd (@bv i) (@bv localId)) log-m))]
            [lane (+ (modulo (+ i (quotient localId b)) struct-size) (* localId struct-size))]
+           ;[lane (@int (bvadd (extract (bvadd (@bv i) (bvlshr (@bv localId) log-b)) log-m)
+           ;                   (bvshl (@bv localId) log-m)))]
            [x (shfl (get I-cached index) lane)])
       ;(pretty-display `(lane ,lane))
+      (vector-set! indices i index)
+      (unique-warp (modulo lane warpSize))
       (accumulate o x)
       ))
+  (pretty-display `(indices ,indices))
+  (for ([t blockSize])
+    (let ([l (for/vector ([i struct-size])
+               (vector-ref (vector-ref indices i) t))])
+      (unique l)))
   (reg-to-global o O gid)
   )
 
 (define (AOS-sum-test2 threadId blockID blockDim I O I-sizes O-sizes a b c)
+   (define log-a (bvlog a))
+   (define log-b (bvlog b))
+   (define log-c (bvlog c))
+   (define log-m (bvlog struct-size))
+   (define log-n (bvlog warpSize))
    (define I-cached (create-matrix (x-y-z struct-size)))
    (define warpID (get-warpId threadId))
    (define offset
@@ -89,24 +111,36 @@
     I
     I-cached
     (x-y-z 1)
-    offset
-    (x-y-z (* warpSize struct-size))
+    (x-y-z (+ 0 (* 2 (get-x blockID) (get-x blockDim)) (* 2 warpID warpSize)))
+    (x-y-z (+ (?warp-size warpSize (- 1 1)) warpSize))
     #f)
    (define localId (get-idInWarp threadId))
    (define o (create-accumulator o (list +) identity blockDim))
+   (define indices (make-vector struct-size))
    (for/bounded
-    ((i 2))
-    (let* ((index (modulo (- (@dup i) localId) struct-size))
+    ((i struct-size))
+    (let* ((index
+            (@int
+             (extract
+              (bvlshr (bvsub (@bv localId) (@dup (@bv i))) log-a)
+              log-m)))
            (lane
-            (+
-             (quotient
-              (* (+ localId localId) (@dup struct-size))
-              (@dup struct-size))
-             (modulo
-              (- (modulo (@dup i) (@dup b)) (quotient localId (@dup b)))
-              (@dup struct-size))))
+            (@int
+             (bvadd
+              (extract
+               (bvadd
+                (extract (@dup (@bv i)) log-n)
+                (bvlshr (@bv localId) log-b))
+               log-m)
+              (bvlshr (bvshl (@bv localId) log-n) log-b))))
            (x (shfl (get I-cached index) lane)))
+      ;(unique-warp (modulo lane warpSize))
+      (vector-set! indices i index)
       (accumulate o x #:pred (@dup #t))))
+  #;(for ([t blockSize])
+    (let ([l (for/vector ([i struct-size])
+               (vector-ref (vector-ref indices i) t))])
+      (unique l)))
    (reg-to-global o O gid))
 
 (define (AOS-sum-test3 threadId blockID blockDim I O I-sizes O-sizes a b c)
@@ -144,19 +178,38 @@
       (accumulate o x #:pred (= localId localId))))
    (reg-to-global o O gid))
 
-(define (test)
-  (for ([w (list 5 32)])
-    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test3 w)])
-      (pretty-display `(test ,w ,ret))))
-  )
-(test)
 
-;; index depth 1, lane depth 4, ??: > 5 min
-;; index depth 1, lane depth 4, fixed constants (a b c): 19 s
-;; m = 3, warpsize 4 & 5 + warpSize choice: 73 s
-;; change ?lane: 20 s
-;; synthesize both load and shuffle: 30 s (8 bit), 50 s (16 bit)
+;; fix loop bound
+;; m = 2, warpsize = 4 8: 16/62 s ***
+;; m = 2, warpsize = 4 8, ref: 19/98 s
+;; m = 2, warpsize = 4 8, constraint row permute: 12/127 s
+;; m = 2, warpsize = 4 8, constraint row permute, distinct?: 13/64 s
+;; m = 2, warpsize = 4 8, constraint col+row permute, distinct?: 10/62 s ***
+;; m = 2, warpsize = 4 8, constraint col+row permute, distinct?, ref: 17/82  s
+
+;; m = 2, warpsize = 4 8, bv: 7/39 s
+;; m = 2, warpsize = 4 8, bv, constraint row permute: 15/26 s
+;; m = 2, warpsize = 4 8, bv, constraint row permute, distinct?: 7/39 s
+;; m = 2, warpsize = 4 8, bv, constraint col+row permute: 7/39 s
+;; m = 2, warpsize = 4 8, bv, constraint col+row permute, distinct?: 7/39 s
+
+;; m = 2, warpsize = 4 8, bv, ref: 8/45 s
+;; m = 2, warpsize = 4 8, bv, constraint row permute, ref: 9/27 s
+;; m = 2, warpsize = 4 8, bv, constraint row permute, distinct?, ref: 27/53 s
+;; m = 2, warpsize = 4 8, bv, constraint col+row permute, ref: 15/27 s
+
+;; m = 3, warpsize = 32: error
+;; m = 3, warpsize = 32, constraint col+row permute, distinct?: error
+
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
+  #|
+  (define log-a (bvlog a))
+  (define log-b (bvlog b))
+  (define log-c (bvlog c))
+  (define log-m (bvlog struct-size))
+  (define log-n (bvlog warpSize))
+|#
+  
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
@@ -169,19 +222,38 @@
 
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
-  (for/bounded ([i (??)])
-    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]  ; (?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
+  (define indices (make-vector struct-size))
+  (for/bounded ([i struct-size])
+    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
+           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
+           ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2) log-m))]
+           ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
            [x (shfl (get I-cached index) lane)])
+      (unique-warp (modulo lane warpSize))
+      ;(vector-set! indices i index)
       (accumulate o x #:pred (?cond localId (@dup i)))
       ))
+  #;(for ([t blockSize])
+    (let ([l (for/list ([i struct-size])
+               (vector-ref (vector-ref indices i) t))])
+      (unique-list l)))
+  
   (reg-to-global o O gid)
   )
+
+
+
+(define (test)
+  (for ([w (list 32)])
+    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test3 w)])
+      (pretty-display `(test ,w ,ret))))
+  )
+;(test)
 
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
-                                     (list 4))))))
+                                     (list 4 8))))))
   (print-forms sol)
   )
 (synthesis)

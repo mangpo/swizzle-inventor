@@ -43,43 +43,84 @@
   )
 
 (define (AOS-load-test threadId blockID blockDim I O a b c)
+   (define log-a (bvlog a))
+   (define log-b (bvlog b))
+   (define log-c (bvlog c))
+   (define log-m (bvlog struct-size))
+   (define log-n (bvlog warpSize))
    (define I-cached (create-matrix (x-y-z struct-size)))
    (define O-cached
      (for/vector ((i blockSize)) (create-matrix (x-y-z struct-size))))
    (define warpID (get-warpId threadId))
+   (define offset
+     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
    (define gid (get-global-threadId threadId blockID))
    (global-to-warp-reg
     I
     I-cached
     (x-y-z 1)
-    (x-y-z (+ 0 (* 4 (get-x blockID) (get-x blockDim)) (* 4 warpID warpSize)))
+    offset
     (x-y-z (* warpSize struct-size))
     #f)
    (define localId (get-idInWarp threadId))
    (for/bounded
-    ((i 4))
+    ((i struct-size))
     (let* ((index
-            (modulo
-             (- (* (@dup i) (@dup b)) (* localId (@dup b)))
-             struct-size))
+            (@int
+             (extract
+              (bvlshr
+               (bvshl
+                (bvsub
+                 (extract (@dup (bv 1 BW)) (bv 5 BW))
+                 (bvsub (@dup (@bv i)) (@bv localId)))
+                (bv 5 BW))
+               (bv 5 BW))
+              log-m)))
            (lane
-            (-
-             (-
-              (- (@dup i) (* localId (@dup warpSize)))
-              (- (* localId (@dup b)) (quotient localId (@dup c))))
-             (- localId (* localId (@dup a)))))
+            (@int
+             (bvadd
+              (bvlshr
+               (bvadd
+                (bvshl (@bv localId) (bv 3 BW))
+                (bvshl (@bv localId) (bv 3 BW)))
+               (bv 2 BW))
+              (extract
+               (bvadd
+                (bvsub (@dup (@bv i)) (@dup (bv 1 BW)))
+                (bvlshr (@bv localId) (bv 3 BW)))
+               (bv 2 BW)))))
            (x (shfl (get I-cached index) lane))
-           (index-o (modulo (- (@dup i) (* localId (@dup a))) struct-size)))
-      (set O-cached index-o x)))
+           (index-o
+            (@int
+             (extract
+              (bvadd
+               (bvlshr (@bv localId) (bv 3 BW))
+               (bvsub (@dup (@bv i)) (@dup (bv 1 BW))))
+              log-m))))
+      (unique-warp (modulo lane warpSize))
+      (set O-cached index-o x))
+    (pretty-display `(i ,i)))
    (warp-reg-to-global
     O-cached
     O
     (x-y-z 1)
-    (x-y-z (+ 0 (* 4 (get-x blockID) (get-x blockDim)) (* 4 warpID warpSize)))
+    offset
     (x-y-z (* warpSize struct-size))
     #f))
 
+;; struct size = 4
+;; warpSize 2 4: > 1 hr
+;; warpSize 2 4, bv, constrain row permute: 43/596 s
+;; warpSize 4 8, bv, constrain row permute: 287/9840 s (still wrong for 32)
+;; warpSize 32, bv, constrain row permute, depth 4/4/2: 76/1681 s
+;; warpSize 32, constrain row permute, depth 3/4/2: 500/2817 s
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
+  (define log-a (bvlog a))
+  (define log-b (bvlog b))
+  (define log-c (bvlog c))
+  (define log-m (bvlog struct-size))
+  (define log-n (bvlog warpSize))
+  
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
   (define warpID (get-warpId threadId))
@@ -93,14 +134,28 @@
 
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* ([p (?lane localId (@dup i) [a b c struct-size warpSize] 2)] ; [a b c struct-size warpSize]
-           [q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
-           [q2 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
-           [index (modulo (?index localId (@dup i) q1 q2 [a b c struct-size warpSize] 1) struct-size)] 
+    (let* (;[p (?lane localId (@dup i) [a b c struct-size warpSize] 2)] ; [a b c struct-size warpSize]
+           ;[q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
+           ;[q2 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
+           ;[index (modulo (?index localId (@dup i) q1 q2 [a b c struct-size warpSize] 1) struct-size)] 
+           ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
+           ;[p (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2)]
+           ;[q1 (?lane-log (@bv localId) (@dup (@bv i)) p [log-a log-b log-c log-m log-n] 4)]
+           ;[q2 (?lane-log (@bv localId) (@dup (@bv i)) p [log-a log-b log-c log-m log-n] 4)]
+           ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) q1 q2 [log-a log-b log-c log-m log-n] 1) log-m))]
+           ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
+
+           [index (modulo (?lane localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
            [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
+           ;[index (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4) log-m))]
+           ;[lane (@int (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4))]
            [x (shfl (get I-cached index) lane)]
-           [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)])
+           [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
+           ;[index-o (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 2) log-m))]
+           )
+      (unique-warp (modulo lane warpSize))
       (set O-cached index-o x))
+    (pretty-display `(i ,i))
       )
   
   (warp-reg-to-global O-cached O
@@ -111,17 +166,17 @@
   )
 
 (define (test)
-  (for ([w (list 2)])
+  (for ([w (list 32)])
     (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test w)])
       (pretty-display `(test ,w ,ret))))
   )
-;(test)
+(test)
 
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
-                                           (list 2 4))))))
+                                           (list 32))))))
   (print-forms sol)
   )
-(synthesis)
+;(synthesis)
 

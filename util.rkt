@@ -1,8 +1,22 @@
 #lang rosette
 
+;(require (only-in rosette [vector-ref $vector-ref]))
 (provide (all-defined-out))
 
-(current-bitwidth 8)
+(define BW 8)
+(current-bitwidth BW)
+
+#;(define (vector-ref x index)
+  (cond
+    [(term? index)
+     (define-symbolic* ref integer?)
+     (assert (and (>= index 0) (< index (vector-length x))))
+     (for ([i (vector-length x)])
+       (when (= i index)
+         (assert (= ref ($vector-ref x i)))))
+     ref]
+
+    [else ($vector-ref x index)]))
 
 ;; dims: x y z
 (define (create-matrix dims [init (lambda () 0)])

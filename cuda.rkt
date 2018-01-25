@@ -9,8 +9,9 @@
 
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
-(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite])
-         @dup gen-uid for/bounded
+(provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite]
+                     [@bvadd bvadd] [@bvsub bvsub] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
+         @int @bv @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg warp-reg-to-global global-to-reg reg-to-global
          warpSize set-warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
@@ -89,13 +90,34 @@
 (define-operator @modulo $modulo modulo)
 (define-operator @quotient $quotient quotient)
 
+(define-operator @bvadd $bvadd bvadd)
+(define-operator @bvsub $bvsub bvsub)
+(define-operator @bvshl $bvshl bvshl)
+(define-operator @bvlshr $bvlshr bvlshr)
 
-;(define-syntax-rule (> x y) (iterate x y p>))
-;(define-syntax-rule (>= x y) (iterate x y p>=))
-;(define-syntax-rule (< x y) (iterate x y p<))
-;(define-syntax-rule (<= x y) (iterate x y p<=))
-;(define-syntax-rule (= x y) (iterate x y p=))
-;(define-syntax-rule (modulo x y) (iterate x y p-modulo))
+(define (@bv x)
+  (if (vector? x)
+      (for/vector ([i (vector-length x)])
+        (@bv (vector-ref x i)))
+      (integer->bitvector x (bitvector BW))))
+
+(define (@int x)
+  (if (vector? x)
+      (for/vector ([i (vector-length x)])
+        (@int (vector-ref x i)))
+      (bitvector->integer x)))
+
+(define (@bvlog x)
+  (define y (log x 2))
+  (assert (integer? y))
+  (integer->bitvector (exact->inexact y) (bitvector BW)))
+
+(define (@extract x b)
+  (if (vector? x)
+      (for/vector ([i (vector-length x)])
+        (@extract (vector-ref x i) b))
+      (let ([s (bvsub (bv BW (bitvector BW)) b)])
+        (bvlshr (bvshl x s) s))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define (global-to-shared I I-shared pattern offset sizes #:transpose [transpose #f])
