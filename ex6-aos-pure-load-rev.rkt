@@ -104,36 +104,18 @@
   (define indices (make-vector struct-size))
   (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
-  (for/bounded ([i struct-size])
+  (for ([i struct-size])
     (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]  ; (?index localId (@dup i) 1)
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
-           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                             (?const a b c struct-size warpSize))
-                          struct-size)]
-           [lane (+ (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                               (?const a b c struct-size warpSize))
-                            (?const a b c struct-size warpSize))
-                    (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                               (?const a b c struct-size warpSize))
-                            (?const a b c struct-size warpSize))
-                    (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                               (?const a b c struct-size warpSize))
-                            (?const a b c struct-size warpSize))
-                    (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                               (?const a b c struct-size warpSize))
-                            (?const a b c struct-size warpSize))
-                    )]
+           [index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 1)]
            [x (shfl (get I-cached index) lane)]
            ;[index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
-           [index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+           #;[index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
                              (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
                              (?const a b c struct-size warpSize))
                           struct-size)]
+           [index-o (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
            )
       ;(unique-warp (modulo lane warpSize))
       ;(vector-set! indices i index)
@@ -167,8 +149,12 @@
 
 ;; Ras's sketch
 ;; struct-size = 2: 2/5
-;; struct-size = 3: 3/44 (4 terms)
+;; struct-size = 3: 3/44 (lane 4 terms)
 ;; struct-size = 4: 3/10
+;; struct-size = 5: 106/531 (lane 4 terms)
+;; struct-size = 6: unsat
+;; struct-size = 7: 26/318 (lane 4 terms)
+;; struct-size = 8: 16/26
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))

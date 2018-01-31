@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 6)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -132,10 +132,14 @@
 ;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 57/777 s
 
 ;; Ras's sketch
+;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 1/3 s
 ;; struct-size 2, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/9 s
 ;; struct-size 3, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/14 s
 ;; struct-size 4, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 4/42 s
-;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 1/3 s
+;; struct-size 5, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 4/39 s
+;; struct-size 6, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: unsat
+;; struct-size 7, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 8/156 s
+;; struct-size 8, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 6/43 s
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
   #|
   (define log-a (bvlog a))
@@ -159,15 +163,28 @@
   (define indices (make-vector struct-size))
   (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
-  (for/bounded ([i struct-size])
+  (for ([i struct-size])
     (let* (;[index (modulo (?lane localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4) log-m))]
            ;[lane (@int (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4))]
-           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                             (?const a b c struct-size warpSize))
+           #;[index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                               (?const a b c struct-size warpSize))
                           struct-size)]
+           [inter (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                               (?const a b c struct-size warpSize))
+                            (?const a b c struct-size warpSize))]
+           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize)) (* inter (?const a b c struct-size warpSize))
+                            (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize)) (quotient inter (?const a b c struct-size warpSize))
+                            (?const a b c struct-size warpSize))
+                         struct-size)]
+
+           ;[inter-l (+ 1 (modulo (+ i (* -1 localId)) struct-size))]
+           ;[left (modulo (quotient inter-l c) a)] ;; q1
+           ;[right (modulo (+ i (* -1 localId)) c)]
+           ;[index (modulo (+ left (* inter a)) struct-size)] ;; q2
            [lane (+ (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
                                (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
                                (?const a b c struct-size warpSize))
@@ -185,12 +202,13 @@
                              (?const a b c struct-size warpSize))
                           struct-size)]
            )
-      (unique-warp (modulo lane warpSize))
+      ;;(unique-warp (modulo lane warpSize))
+      (pretty-display `(i ,i))
       (vector-set! indices i index)
       (vector-set! indices-o i index-o)
       (set O-cached index-o x))
     )
-  (for ([t blockSize])
+  #;(for ([t blockSize])
     (let ([l (for/list ([i struct-size]) (vector-ref (vector-ref indices i) t))]
           [lo (for/list ([i struct-size]) (vector-ref (vector-ref indices-o i) t))])
       (unique-list l)

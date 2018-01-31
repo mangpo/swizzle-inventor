@@ -118,15 +118,8 @@
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-a (interpret-lane my-lane-a1 (vector tidx (@dup i)) (vector warpSize))]
            ;[lane-b (interpret-lane my-lane-b1 (vector tidx (@dup i)) (vector warpSize))]
-           
-           [lane-a (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
-                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
-                              (?const warpSize))
-                           (?const warpSize))]
-           [lane-b (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
-                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
-                              (?const warpSize))
-                           (?const warpSize))]
+           [lane-a (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [lane-b (?lane-mod2 (@dup i) tidx [warpSize] 0)]
            [a (shfl (get a-cached (@dup 0)) lane-a)]
            [b (shfl (get b-cached (@dup 0)) lane-b)]
           )
@@ -137,14 +130,8 @@
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-a (interpret-lane my-lane-a2 (vector tidx (@dup i)) (vector warpSize))]
            ;[lane-b (interpret-lane my-lane-b2 (vector tidx (@dup i)) (vector warpSize))]
-           [lane-a (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
-                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
-                              (?const warpSize))
-                           (?const warpSize))]
-           [lane-b (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
-                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
-                              (?const warpSize))
-                           (?const warpSize))]
+           [lane-a (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [lane-b (?lane-mod2 (@dup i) tidx [warpSize] 0)]
            [a (shfl (get a-cached (@dup 0)) lane-a)]
            [b (shfl (get b-cached (@dup 0)) lane-b)]
           )

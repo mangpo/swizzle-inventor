@@ -233,14 +233,8 @@
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2) log-m))]
            ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
-           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                             (?const a b c struct-size warpSize))
-                          struct-size)]
-           [lane (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                            (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                            (?const a b c struct-size warpSize))
-                         (?const a b c struct-size warpSize))]
+           [index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
            [x (shfl (get I-cached index) lane)])
       ;(unique-warp (modulo lane warpSize))
       (vector-set! indices i index)

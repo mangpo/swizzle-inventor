@@ -2,8 +2,8 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-res
-         ?cond ?ite ?const ?test
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod2 ?lane-mod3
+         ?cond ?ite ?const
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
@@ -62,23 +62,21 @@
     (choose 0 1 -1 c ...)])
   )
 
-(define-synthax (?lane-res x ... depth)
-  #:base (modulo (+ (+ (* x (??)) ...)
-                    (+ (quotient x (??)) ...)
-                    (??))
-                 (??))
-  #:else (modulo (+ (+ (* x (??)) ...)
-                    (+ (quotient x (??)) ...)
-                    (??))
-                 (??)))
+(define-synthax (?lane-mod2 x1 x2 [c ...] depth)
+  #:base (modulo (+ (* x1 (?const c ...)) (* x2 (?const c ...))
+                    (quotient x1 (?const c ...)) (quotient x2 (?const c ...))
+                    (?const c ...))
+                 (?const c ...))
+  #:else (+ (?lane-mod2 x1 x2 [c ...] 0)
+             (?lane-mod2 x1 x2 [c ...] (- depth 1))))
 
-(define-synthax ?test
-  ([(?test x ... [c ...])
-    (modulo (+ (* x (?const c ...)) ...
-               (quotient x (?const c ...)) ...
-               (?const c ...))
-            (?const c ...))])
-  )
+(define-synthax (?lane-mod3 x1 x2 x3 [c ...] depth)
+  #:base (modulo (+ (* x1 (?const c ...)) (* x2 (?const c ...)) (* x3 (?const c ...))
+                    (quotient x1 (?const c ...)) (quotient x2 (?const c ...)) (quotient x3 (?const c ...))
+                    (?const c ...))
+                 (?const c ...))
+  #:else (+ (?lane-mod3 x1 x2 x3 [c ...] 0)
+            (?lane-mod3 x1 x2 x3 [c ...] (- depth 1))))
 
 (define-synthax (?warp-size-const x ... depth)
  #:base (choose x ... (??))

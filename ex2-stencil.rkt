@@ -78,13 +78,10 @@
   (define o (create-accumulator o (list +) /3 blockDim))
 
   (for/bounded ([i (??)])
-    (let* ([index (?index localId (@dup i) [warpSize] 1)]  ;(?index localId (@dup i) 1)
-           ;[lane (?lane localId (@dup i) [warpSize] 1)] ;(?lane localId (@dup i) [warpSize] 1)
+    (let* ([index (?index localId (@dup i) [warpSize] 1)] 
+           ;[lane (?lane localId (@dup i) [warpSize] 1)] ;; time 7/14
            ;[lane (interpret-lane my-lane (vector localId (@dup i)) (vector))]
-           [lane (modulo (+ (* (@dup i) (?const warpSize)) (* localId (?const warpSize))
-                            (quotient (@dup i) (?const warpSize)) (quotient localId (?const warpSize))
-                            (?const warpSize))
-                         (?const warpSize))]
+           [lane (?lane-mod2 (@dup i) localId [warpSize] 0)] ;; time 8/19 7/19
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
       ))
