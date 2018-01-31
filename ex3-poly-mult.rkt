@@ -89,11 +89,21 @@
   (define a-cached (create-matrix (x-y-z 1)))
   (define b-cached (create-matrix (x-y-z 1)))
   (global-to-warp-reg A a-cached
+                        (x-y-z 1) ;; stride
+                        (x-y-z (@dup 0))
+                        (x-y-z warpSize)
+                        #f)
+  (global-to-warp-reg B b-cached
+                      (x-y-z 1) ;; stride
+                      (x-y-z (@dup 0))
+                      (x-y-z warpSize)
+                      #f)
+  #;(global-to-warp-reg A a-cached
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                         #f)
-  (global-to-warp-reg B b-cached
+  #;(global-to-warp-reg B b-cached
                       (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
@@ -106,8 +116,17 @@
   (for/bounded ([i (choose warpSize (??))])
     (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
-           [lane-a (interpret-lane my-lane-a1 (vector tidx (@dup i)) (vector warpSize))]
-           [lane-b (interpret-lane my-lane-b1 (vector tidx (@dup i)) (vector warpSize))]
+           ;[lane-a (interpret-lane my-lane-a1 (vector tidx (@dup i)) (vector warpSize))]
+           ;[lane-b (interpret-lane my-lane-b1 (vector tidx (@dup i)) (vector warpSize))]
+           
+           [lane-a (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
+                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
+                              (?const warpSize))
+                           (?const warpSize))]
+           [lane-b (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
+                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
+                              (?const warpSize))
+                           (?const warpSize))]
            [a (shfl (get a-cached (@dup 0)) lane-a)]
            [b (shfl (get b-cached (@dup 0)) lane-b)]
           )
@@ -116,8 +135,16 @@
   (for/bounded ([i (choose warpSize (??))])
     (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
-           [lane-a (interpret-lane my-lane-a2 (vector tidx (@dup i)) (vector warpSize))]
-           [lane-b (interpret-lane my-lane-b2 (vector tidx (@dup i)) (vector warpSize))]
+           ;[lane-a (interpret-lane my-lane-a2 (vector tidx (@dup i)) (vector warpSize))]
+           ;[lane-b (interpret-lane my-lane-b2 (vector tidx (@dup i)) (vector warpSize))]
+           [lane-a (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
+                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
+                              (?const warpSize))
+                           (?const warpSize))]
+           [lane-b (modulo (+ (* (@dup i) (?const warpSize)) (* tidx (?const warpSize))
+                              (quotient (@dup i) (?const warpSize)) (quotient tidx (?const warpSize))
+                              (?const warpSize))
+                           (?const warpSize))]
            [a (shfl (get a-cached (@dup 0)) lane-a)]
            [b (shfl (get b-cached (@dup 0)) lane-b)]
           )
@@ -143,7 +170,7 @@
     (time (solve
            (assert (andmap
                     (lambda (w) (run-with-warp-size mult-spec mult-sketch w))
-                    (list 4 5))))))
+                    (list 4))))))
   (print-forms sol)
   )
 (synthesis)

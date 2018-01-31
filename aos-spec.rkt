@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 4)
+(define struct-size 3)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -81,11 +81,13 @@
   )
 
 (define (AOS-load-sketch2 threadId blockID blockDim I O a b c)
+  #|
   (define log-a (bvlog a))
   (define log-b (bvlog b))
   (define log-c (bvlog c))
   (define log-m (bvlog struct-size))
   (define log-n (bvlog warpSize))
+|#
   
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
@@ -99,23 +101,23 @@
 
   (define j (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* (;[index (modulo (* (- c 1) (- i j)) struct-size)] ;; step 1 (column shuffle): index = s-inv(i)
-           ;[lane (+ (modulo (+ i (quotient j b)) struct-size) (* j struct-size))]  ;; step 2 (row shuffle): lane = d'(j)
+    (let* ([index (modulo (* (- c 1) (- i j)) struct-size)] ;; step 1 (column shuffle): index = s-inv(i)
+           [lane (+ (modulo (+ i (quotient j b)) struct-size) (* j struct-size))]  ;; step 2 (row shuffle): lane = d'(j)
            
-           [index (@int (extract (bvsub (bvshl (bvsub (@bv i) (@bv j)) log-c)
+           #;[index (@int (extract (bvsub (bvshl (bvsub (@bv i) (@bv j)) log-c)
                                         (bvsub (@bv i) (@bv j))) log-m))]
-           [lane (@int (bvadd (extract (bvadd (@bv i) (bvlshr (@bv j) log-b)) log-m)
+           #;[lane (@int (bvadd (extract (bvadd (@bv i) (bvlshr (@bv j) log-b)) log-m)
                               (bvshl (@bv j) log-m)))]
            [x (shfl (get I-cached index) lane)]
-           ;[index-o (modulo (+ i (quotient j b)) struct-size)] ;; step 3 (column rotate): index-o = r(i)
-           [index-o (@int (extract (bvadd (@bv i) (bvlshr (@bv j) log-b)) log-m))]
+           [index-o (modulo (+ i (quotient j b)) struct-size)] ;; step 3 (column rotate): index-o = r(i)
+           ;[index-o (@int (extract (bvadd (@bv i) (bvlshr (@bv j) log-b)) log-m))]
            )
-      (pretty-display `(index-i ,index))
-      (pretty-display `(lane ,lane))
-      (pretty-display `(x ,x))
-      (pretty-display `(index-o ,index-o))
-      (newline)
-      (unique-warp (modulo lane warpSize))
+      ;(pretty-display `(index-i ,index))
+      ;(pretty-display `(lane ,lane))
+      ;(pretty-display `(x ,x))
+      ;(pretty-display `(index-o ,index-o))
+      ;(newline)
+      ;(unique-warp (modulo lane warpSize))
       (set O-cached index-o x))
       )
   

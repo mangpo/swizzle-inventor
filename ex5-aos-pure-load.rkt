@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 4)
+(define struct-size 3)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -42,6 +42,9 @@
                       (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f)
   )
 
+(define (print-vec x)
+  (format "#(~a)" (string-join (for/list ([xi x]) (format "~a" xi)))))
+
 (define (AOS-load-test threadId blockID blockDim I O a b c)
    (define log-a (bvlog a))
    (define log-b (bvlog b))
@@ -63,6 +66,7 @@
     (x-y-z (* warpSize struct-size))
     #f)
    (define localId (get-idInWarp threadId))
+  (pretty-display `(threadId ,threadId))
    (for/bounded
     ((i struct-size))
     (let* ((index
@@ -97,9 +101,12 @@
                (bvlshr (@bv localId) (bv 3 BW))
                (bvsub (@dup (@bv i)) (@dup (bv 1 BW))))
               log-m))))
+      (pretty-display `(i ,i ,(print-vec localId)))
+      (pretty-display `(index ,(print-vec index)))
+      (pretty-display `(lane ,(print-vec lane)))
+      (pretty-display `(index-o ,(print-vec index-o)))
       (unique-warp (modulo lane warpSize))
-      (set O-cached index-o x))
-    (pretty-display `(i ,i)))
+      (set O-cached index-o x)))
    (warp-reg-to-global
     O-cached
     O
@@ -117,12 +124,26 @@
 ;; warpSize 32, depth 3/4/2: 142/4661 s
 ;; warpSize 32, depth 3/4/2, constrain row permute: 500/2817 s
 ;; warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 89/2518 s
+;; warpSize 32, depth 3/4/2, constraint col+row permute, distinct?, ref: > 8 h
+
+;; struct-size 2, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 27/266 s
+;; struct-size 3, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 59/410 s
+;; struct-size 4, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 89/2518 s
+;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 57/777 s
+
+;; Ras's sketch
+;; struct-size 2, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/9 s
+;; struct-size 3, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/14 s
+;; struct-size 4, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 4/42 s
+;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 1/3 s
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
+  #|
   (define log-a (bvlog a))
   (define log-b (bvlog b))
   (define log-c (bvlog c))
   (define log-m (bvlog struct-size))
   (define log-n (bvlog warpSize))
+|#
   
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
@@ -139,24 +160,30 @@
   (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* (;[p (?lane localId (@dup i) [a b c struct-size warpSize] 2)] ; [a b c struct-size warpSize]
-           ;[q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
-           ;[q2 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
-           ;[index (modulo (?index localId (@dup i) q1 q2 [a b c struct-size warpSize] 1) struct-size)] 
+    (let* (;[index (modulo (?lane localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
-           ;[p (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2)]
-           ;[q1 (?lane-log (@bv localId) (@dup (@bv i)) p [log-a log-b log-c log-m log-n] 4)]
-           ;[q2 (?lane-log (@bv localId) (@dup (@bv i)) p [log-a log-b log-c log-m log-n] 4)]
-           ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) q1 q2 [log-a log-b log-c log-m log-n] 1) log-m))]
-           ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
-
-           [index (modulo (?lane localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4) log-m))]
            ;[lane (@int (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4))]
+           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                             (?const a b c struct-size warpSize))
+                          struct-size)]
+           [lane (+ (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                               (?const a b c struct-size warpSize))
+                            (?const a b c struct-size warpSize))
+                    (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                               (?const a b c struct-size warpSize))
+                            (?const a b c struct-size warpSize))
+                    )]
            [x (shfl (get I-cached index) lane)]
-           [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
+           ;[index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
            ;[index-o (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 2) log-m))]
+           [index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                             (?const a b c struct-size warpSize))
+                          struct-size)]
            )
       (unique-warp (modulo lane warpSize))
       (vector-set! indices i index)

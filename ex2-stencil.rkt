@@ -79,8 +79,12 @@
 
   (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) [warpSize] 1)]  ;(?index localId (@dup i) 1)
-           [lane (?lane localId (@dup i) [warpSize] 1)] ;(?lane localId (@dup i) [warpSize] 1)
+           ;[lane (?lane localId (@dup i) [warpSize] 1)] ;(?lane localId (@dup i) [warpSize] 1)
            ;[lane (interpret-lane my-lane (vector localId (@dup i)) (vector))]
+           [lane (modulo (+ (* (@dup i) (?const warpSize)) (* localId (?const warpSize))
+                            (quotient (@dup i) (?const warpSize)) (quotient localId (?const warpSize))
+                            (?const warpSize))
+                         (?const warpSize))]
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
       ))
@@ -89,7 +93,7 @@
   )
 
 (define (test)
-  (for ([w (list 4)])
+  (for ([w (list 4 5)])
     (let ([ret (run-with-warp-size conv1d-spec conv1d w)])
       (pretty-display `(test ,w ,ret))))
   )
@@ -110,7 +114,7 @@
     (time (solve
            (assert (andmap
                     (lambda (w) (run-with-warp-size conv1d-spec conv1d-sketch w))
-                    (list 4 5))))))
+                    (list 4))))))
   (print-forms sol)
   ;(print-lane 'lane (evaluate my-lane sol) '#(localId i) '#())
   )

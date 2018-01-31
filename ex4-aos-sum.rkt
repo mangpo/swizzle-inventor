@@ -203,6 +203,7 @@
 ;; fix load
 ;; m = 3, warpsize = 32: 71/155
 ;; m = 3, warpsize = 32, constraint col+row permute, distinct?: 33/140
+;; m = 3, warpsize = 32, Ras's sketch: 4/10
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   #|
   (define log-a (bvlog a))
@@ -228,10 +229,18 @@
   (define o (create-accumulator o (list +) identity blockDim))
   (define indices (make-vector struct-size))
   (for/bounded ([i struct-size])
-    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
-           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
+    (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
+           ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2) log-m))]
            ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
+           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                             (?const a b c struct-size warpSize))
+                          struct-size)]
+           [lane (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+                            (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
+                            (?const a b c struct-size warpSize))
+                         (?const a b c struct-size warpSize))]
            [x (shfl (get I-cached index) lane)])
       ;(unique-warp (modulo lane warpSize))
       (vector-set! indices i index)

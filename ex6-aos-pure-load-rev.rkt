@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 4)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -59,27 +59,27 @@
     offset
     (x-y-z (* warpSize struct-size))
     #f)
+   (define indices (make-vector struct-size))
+   (define indices-o (make-vector struct-size))
    (define localId (get-idInWarp threadId))
    (for/bounded
     ((i struct-size))
-    (let* ((index
-            (modulo
-             (quotient
-              (+
-               (+ (quotient localId (@dup a)) (* (@dup i) (@dup warpSize)))
-               (* (* (@dup i) (@dup a)) (@dup b)))
-              (@dup b))
-             struct-size))
+    (let* ((index (modulo (+ (- (@dup i) localId) localId) struct-size))
            (lane
-            (-
+            (+
              (-
-              (- (* localId (@dup a)) (- (@dup i) localId))
-              (- (* localId (@dup b)) (quotient localId (@dup c))))
+              (* (* localId (@dup a)) (@dup a))
+              (* (* (@dup i) (@dup a)) (@dup struct-size)))
              (+
-              (- (modulo (@dup i) (@dup c)) (+ localId localId))
-              (* (+ (@dup i) (@dup i)) (@dup struct-size)))))
+              (- (+ localId localId) (- (@dup i) (@dup 1)))
+              (- (- (@dup i) (@dup 1)) (+ (@dup i) (@dup i))))))
            (x (shfl (get I-cached index) lane))
-           (index-o (modulo (* (- (@dup i) localId) (@dup b)) struct-size)))
+           (index-o
+            (modulo
+             (-
+              (+ (* localId (@dup a)) (- localId (@dup i)))
+              (* (+ localId (@dup i)) (@dup a)))
+             struct-size)))
       (set O-cached index-o x)))
    (warp-reg-to-global
     O-cached
@@ -89,6 +89,7 @@
     (x-y-z (* warpSize struct-size))
     #f))
 
+;; warpSize 32, depth 2/4/3, constraint col+row permute, distinct?: 
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
@@ -100,19 +101,24 @@
                  offset
                  (x-y-z (* warpSize struct-size)) #f)
 
+  (define indices (make-vector struct-size))
+  (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
   (for/bounded ([i struct-size])
-    (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 4) struct-size)]  ; (?index localId (@dup i) 1)
-           ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
-           [index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
-           [p (?lane localId (@dup i) [a b c struct-size warpSize] 2)]
-           [q1 (?lane localId (@dup i) p [a b c struct-size warpSize] 4)]
-           [q2 (?lane localId (@dup i) p q1 [a b c struct-size warpSize] 4)]
-           [lane (?lane localId (@dup i) p q1 q2 [a b c struct-size warpSize] 1)]
+    (let* ([index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]  ; (?index localId (@dup i) 1)
+           [lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
            [x (shfl (get I-cached index) lane)]
            [index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 3) struct-size)])
+      ;(unique-warp (modulo lane warpSize))
+      ;(vector-set! indices i index)
+      ;(vector-set! indices-o i index-o)
       (set O-cached index-o x))
       )
+  #;(for ([t blockSize])
+    (let ([l (for/list ([i struct-size]) (vector-ref (vector-ref indices i) t))]
+          [lo (for/list ([i struct-size]) (vector-ref (vector-ref indices-o i) t))])
+      (unique-list l)
+      (unique-list lo)))
   
   (warp-reg-to-global O-cached O
                       (x-y-z 1)
@@ -121,16 +127,21 @@
   )
 
 (define (test)
-  (for ([w (list 3 4 5 6)])
+  (for ([w (list 32)])
     (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test3 w)])
       (pretty-display `(test ,w ,ret))))
   )
 ;(test)
 
+;; struct-size = 3, no permutation constraint: 44/1058 s
+;; struct-size = 3, row+col permutation, distinct?: 49/1118 s
+
+;; struct-size = 2: 20/90
+;; struct-size = 4: 56/994
 (define (synthesis)
   (pretty-display "solving...")
   (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
-                                           (list 3 4 5 6))))))
+                                           (list 32))))))
   (print-forms sol)
   )
 (synthesis)

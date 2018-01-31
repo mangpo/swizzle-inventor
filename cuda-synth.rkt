@@ -2,7 +2,8 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?cond ?ite
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-res
+         ?cond ?ite ?const ?test
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
@@ -54,6 +55,29 @@
   ([(?index x ... [c ...] depth)
     (choose (?ite x ... depth)
             (?lane x ... [c ...] depth))])
+  )
+
+(define-synthax ?const
+  ([(?const c ...)
+    (choose 0 1 -1 c ...)])
+  )
+
+(define-synthax (?lane-res x ... depth)
+  #:base (modulo (+ (+ (* x (??)) ...)
+                    (+ (quotient x (??)) ...)
+                    (??))
+                 (??))
+  #:else (modulo (+ (+ (* x (??)) ...)
+                    (+ (quotient x (??)) ...)
+                    (??))
+                 (??)))
+
+(define-synthax ?test
+  ([(?test x ... [c ...])
+    (modulo (+ (* x (?const c ...)) ...
+               (quotient x (?const c ...)) ...
+               (?const c ...))
+            (?const c ...))])
   )
 
 (define-synthax (?warp-size-const x ... depth)

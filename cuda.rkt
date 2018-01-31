@@ -14,7 +14,8 @@
          @int @bv @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg warp-reg-to-global global-to-reg reg-to-global
-         warpSize set-warpSize blockSize get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
+         warpSize set-warpSize blockSize set-blockSize
+         get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
          run-kernel)
@@ -30,6 +31,8 @@
 
 (define (set-warpSize s)
   (set! warpSize s))
+(define (set-blockSize s)
+  (set! blockSize s))
 
 (define uid 0)
 (define (gen-uid)
