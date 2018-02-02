@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 6)
+(define struct-size 2)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -168,24 +168,18 @@
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4) log-m))]
            ;[lane (@int (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 4))]
-           #;[index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                               (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                               (?const a b c struct-size warpSize))
-                          struct-size)]
-           [inter (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+           [index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 1)]
+           #;[inter (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
                                (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
                                (?const a b c struct-size warpSize))
                             (?const a b c struct-size warpSize))]
-           [index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize)) (* inter (?const a b c struct-size warpSize))
+           #;[index (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize)) (* inter (?const a b c struct-size warpSize))
                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize)) (quotient inter (?const a b c struct-size warpSize))
                             (?const a b c struct-size warpSize))
                          struct-size)]
 
-           ;[inter-l (+ 1 (modulo (+ i (* -1 localId)) struct-size))]
-           ;[left (modulo (quotient inter-l c) a)] ;; q1
-           ;[right (modulo (+ i (* -1 localId)) c)]
-           ;[index (modulo (+ left (* inter a)) struct-size)] ;; q2
-           [lane (+ (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+           #;[lane (+ (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
                                (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
                                (?const a b c struct-size warpSize))
                             (?const a b c struct-size warpSize))
@@ -197,7 +191,8 @@
            [x (shfl (get I-cached index) lane)]
            ;[index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
            ;[index-o (@int (extract (?lane-log-bv (@bv localId) (@dup (@bv i)) [2 3 4 5] 2) log-m))]
-           [index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
+           [index-o (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           #;[index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
                              (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
                              (?const a b c struct-size warpSize))
                           struct-size)]

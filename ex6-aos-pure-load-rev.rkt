@@ -108,13 +108,9 @@
     (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]  ; (?index localId (@dup i) 1)
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]  ; (+ (modulo (+ i (quotient localId 2)) 2) (* localId 2))
            [index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
-           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 1)]
+           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 3)]
            [x (shfl (get I-cached index) lane)]
            ;[index-o (modulo (?index localId (@dup i) [a b c struct-size warpSize] 3) struct-size)]
-           #;[index-o (modulo (+ (* (@dup i) (?const a b c struct-size warpSize)) (* localId (?const a b c struct-size warpSize))
-                             (quotient (@dup i) (?const a b c struct-size warpSize)) (quotient localId (?const a b c struct-size warpSize))
-                             (?const a b c struct-size warpSize))
-                          struct-size)]
            [index-o (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
            )
       ;(unique-warp (modulo lane warpSize))

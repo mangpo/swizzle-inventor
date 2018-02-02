@@ -10,7 +10,7 @@
 ;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite]
-                     [@bvadd bvadd] [@bvsub bvsub] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
+                     [@bvadd bvadd] [@bvsub bvsub] [@bvand bvand] [@bvxor bvxor] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
          @int @bv @dup gen-uid for/bounded
          define-shared
          global-to-shared shared-to-global global-to-warp-reg warp-reg-to-global global-to-reg reg-to-global
@@ -99,6 +99,8 @@
 
 (define-operator @bvadd $bvadd bvadd)
 (define-operator @bvsub $bvsub bvsub)
+(define-operator @bvand $bvand bvand)
+(define-operator @bvxor $bvxor bvxor)
 (define-operator @bvshl $bvshl bvshl)
 (define-operator @bvlshr $bvlshr bvlshr)
 
@@ -134,7 +136,7 @@
 
 (define (cost-of op)
   (cond
-    [(member op (list @+ @- @> @>= @< @<= @= @bvadd @bvsub @bvshl @bvlshr)) 1]
+    [(member op (list @+ @- @> @>= @< @<= @= @bvadd @bvsub @bvand @bvxor @bvshl @bvlshr)) 1]
     [(member op (list @* @modulo @quotient)) 2]
     [else (assert `(cost-of ,op unimplemented))]))
 
@@ -364,7 +366,7 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 8)))
+    (f 0 5)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
