@@ -1,5 +1,6 @@
 #lang rosette
 
+(require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
 (define n-block 1)

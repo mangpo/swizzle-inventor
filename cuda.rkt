@@ -18,7 +18,7 @@
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
-         run-kernel)
+         run-kernel get-cost reset-cost)
 
 
 (define warpSize 4)
@@ -38,6 +38,7 @@
 (define (gen-uid)
   (set! uid (add1 uid))
   uid)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; lifted operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -73,12 +74,15 @@
 (define-syntax-rule (define-operator my-op @op op)
   (begin
     (define (@op l)
-      (cond
-        [(= (length l) 1) (car l)]
-        [(= (length l) 2)
-         ;(when (equal? `@op `$<) (pretty-display `(@op ,l)))
-         (iterate (first l) (second l) op)]
-        [else (iterate (first l) (@op (cdr l)) op)]))
+      (define ret
+        (cond
+          [(= (length l) 1) (car l)]
+          [(= (length l) 2)
+           ;(when (equal? `@op `$<) (pretty-display `(@op ,l)))
+           (iterate (first l) (second l) op)]
+          [else (iterate (first l) (@op (cdr l)) op)]))
+      (inc-cost my-op ret l)
+      ret)
     (define my-op (lambda l (@op l)))
     ))
 
@@ -122,8 +126,127 @@
       (let ([s (bvsub (bv BW (bitvector BW)) b)])
         (bvlshr (bvshl x s) s))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;; performance cost ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define cost 0)
+(define (reset-cost) (set! cost 0))
+(define (get-cost) cost)
+
+(define (cost-of op)
+  (cond
+    [(member op (list @+ @- @> @>= @< @<= @= @bvadd @bvsub @bvshl @bvlshr)) 1]
+    [(member op (list @* @modulo @quotient)) 2]
+    [else (assert `(cost-of ,op unimplemented))]))
+
+(define (zero? x) (= x 0))
+(define (one? x) (= x 1))
+(define (zero-bv? x) (= x (bv 0 BW)))
+(define (one-bv? x) (= x (bv 1 BW)))
+
+(define (all? x f)
+  (cond
+    [(vector? x)
+     (define ret #t)
+     (for ([i (vector-length x)])
+       (set! ret (and ret (all? (vector-ref x i) f))))
+     ret]
+
+    [(list? x)
+     (andmap (lambda (xi) (all? xi f)) x)]
+
+    [else (f x)]))
+
+(define (size-of x)
+   (cond
+    [(vector? x)
+     (define len (vector-length x))
+     (if (> len 0)
+         (* len (size-of (vector-ref x 0)))
+         0)]
+
+    [(list? x)
+     (define len (length x))
+     (if (> len 0)
+         (* len (size-of (car x)))
+         0)]
+
+    [else 1]))
+
+(define (inc-cost op ret args)
+  (define op-cost (cost-of op))
+  
+  ;(pretty-display `(inc-cost ,op ,op-cost))
+  (define inc
+    (cond
+      [(member op (list @+ @-))
+       ;(pretty-display `(@modulo ,ret))
+       (cond
+         [(all? (second args) zero?) 0]
+         [(all? ret zero?) 0]
+         [else (* op-cost (size-of ret))])]
+
+      [(member op (list @modulo))
+       (cond
+         [(all? (second args) one?) 0]
+         [else (* op-cost (size-of ret))])]
+      
+      [(member op (list @*))
+       ;(pretty-display `(@* ,ret))
+       (cond
+         [(all? (second args) zero?) 0]
+         [(all? (second args) one?) 0]
+         [else (* op-cost (size-of ret))])]
+      
+      [(member op (list @quotient))
+       (cond
+         [(all? (second args) one?) 0]
+         [else (* op-cost (size-of ret))])]
+      
+      [(member op (list @bvadd @bvsub))
+       (cond
+         [(all? ret zero-bv?) 0]
+         [else (* op-cost (size-of ret))])]
+      
+      [(member op (list @bvshl @bvlshr))
+       (cond
+         [(all? (second args) zero-bv?) 0]
+         [else (* op-cost (size-of ret))])]
+      [else (* op-cost (size-of ret))]
+      ))
+  (set! cost (+ cost inc))
+  )
+
+
+(define (accumulate-cost ops vals)
+  (define (f ops vals)
+    (cond
+      [(vector? vals)
+       (* (cost-of (car ops)) (vector-length vals)
+          (f (cdr ops) (vector-ref vals 0)))]
+      
+      [(list? vals)
+       (* (cost-of (car ops)) (length vals)
+          (f (cdr ops) (car vals)))]
+      
+      [(empty? ops) 1]
+      [else (cost-of (car ops))]
+      ))
+  (define inc (f ops vals))
+  ;(pretty-display `(accumulate-cost ,ops ,(size-of vals) ,inc))
+  (set! cost (+ cost inc)))
+
+(define (global-cost pattern sizes)
+  (define pattern-x (get-x pattern))
+  (define my-cost
+    (if (= pattern-x 1)
+        (* 4 (apply * sizes))
+        (* 4 16 (apply * sizes))))
+  (set! cost (+ cost my-cost)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define (global-to-shared I I-shared pattern offset sizes #:transpose [transpose #f])
+  (global-cost pattern sizes)
   (define bounds (get-dims I))
   (cond
     [(= (length offset) 1)
@@ -165,6 +288,9 @@
     ))
 
 (define (shared-to-global I-shared I pattern offset sizes #:transpose [transpose #f])
+  (if transpose
+      (global-cost (reverse pattern) (reverse sizes))
+      (global-cost pattern sizes))
   (define bounds (get-dims I))
   (cond
     [(= (length offset) 1)
@@ -210,6 +336,7 @@
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)]
          [new-I-reg (make-vector blockSize #f)])
+    (global-cost (list 1) (list (size-of I-reg)))
     (for ([t blockSize])
       (set new-I-reg t (clone I-reg)))
     (set! I-reg new-I-reg)
@@ -222,6 +349,7 @@
   (reg-to-global I-reg I offset)
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
+    (global-cost (list 1) (list (size-of I-reg)))
     (for ([i blockSize]
           [global-i offset])
       (when (for/and ([b bounds] [i global-i]) (< i b))
@@ -244,6 +372,8 @@
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
 (define-syntax-rule 
   (global-to-warp-reg I I-reg pattern offset sizes transpose)
+  (begin
+    (global-cost pattern sizes)
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -280,10 +410,14 @@
 
     ;; TODO
     [else (raise "unimplemented")]
-    ))
+    )))
 
 (define-syntax-rule 
   (warp-reg-to-global I-reg I pattern offset sizes transpose)
+  (begin
+    (if transpose
+        (global-cost (reverse pattern) (reverse sizes))
+        (global-cost pattern sizes))
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -318,7 +452,7 @@
 
     ;; TODO
     [else (raise "unimplemented")]
-    ))
+    )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; shuffle operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -337,6 +471,8 @@
         (let ([i-dest (+ offset i)]
               [i-src (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
+
+  (set! cost (+ cost len))
   res)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -429,12 +565,18 @@
              [add (get addition i)])
          (when p
            (set-accumulator-val! acc (cons add (accumulator-val acc))))))
+     
+     (accumulate-cost (reverse (accumulator-oplist (vector-ref x 0))) addition) 
      ]
 
     [pred
      (define add (f val-list (accumulator-oplist x) #f))
      (set-accumulator-val! x (cons add (accumulator-val x)))
-     ]))
+     
+     (accumulate-cost (reverse (accumulator-oplist x)) add) 
+     ])
+
+  )
 
 (define (acc-equal? x y)
   (cond
@@ -504,6 +646,7 @@
   (set! gridDim my-gridDim)
   (set! blockDim my-blockDim)
   (set! blockSize (apply * my-blockDim))
+  (reset-cost)
   
   (define (f blockID sizes)
     (if (empty? sizes)
@@ -512,7 +655,9 @@
           (apply kernel (append (list threadIds blockID blockDim) args)))
         (for ([i (car sizes)])
           (f (cons i blockID) (cdr sizes)))))
-  (f (list) (reverse gridDim)))
+  (f (list) (reverse gridDim))
+  ;;(pretty-display `(cost ,cost))
+  )
 
 (define-syntax-rule (run-kernel kernel my-blockDim my-gridDim x ...)
   (let ([Ids (get-threadId my-blockDim)])
