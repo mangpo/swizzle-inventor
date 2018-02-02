@@ -73,12 +73,18 @@
 (define solver (current-solver))
 (solver-assert solver (asserts))
 ;(solver-minimize (current-solver) (list cost))
-(define sol (solver-check solver))
+;(define sol (solver-check solver))
 
 ;;;;;;;;;;;;;;; fast ;;;;;;;;;;;;;;;
-;(define sol (time (solve (assert #t))))
+(define sol (time (solve (assert #t))))
 
 ;;;;;;;;;;;;;;; solution ;;;;;;;;;;;;;;;
 (define this-cost (evaluate cost sol))
 (print-forms sol)
 (pretty-display `(cost ,this-cost))
+
+(displayln "---- optimizing ----")
+(define opt-sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
+(define opt-cost (evaluate cost opt-sol))
+(print-forms opt-sol)
+(pretty-display `(cost ,opt-cost))
