@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 7)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -278,7 +278,7 @@
 |#
 
   ;; fast
-  (define sol (time (solve (assert #t))))
+  (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
 
   (define this-cost (evaluate cost sol))
   (print-forms sol)

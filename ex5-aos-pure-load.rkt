@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 2)
+(define struct-size 8)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -132,14 +132,14 @@
 ;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 57/777 s
 
 ;; Ras's sketch
-;; struct-size 4, warpSize 8, depth 3/4/2, constraint col+row permute, distinct?: 1/3 s
-;; struct-size 2, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/9 s
-;; struct-size 3, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 2/14 s
-;; struct-size 4, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 4/42 s
-;; struct-size 5, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 4/39 s
-;; struct-size 6, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: unsat
-;; struct-size 7, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 8/156 s
-;; struct-size 8, warpSize 32, depth 3/4/2, constraint col+row permute, distinct?: 6/43 s
+;; struct-size 4, warpSize 8, constraint col+row permute, distinct?: 1/3 s
+;; struct-size 2, warpSize 32, constraint col+row permute, distinct?: 2/9 s
+;; struct-size 3, warpSize 32, constraint col+row permute, distinct?: 2/14 s
+;; struct-size 4, warpSize 32, constraint col+row permute, distinct?: 4/42 s
+;; struct-size 5, warpSize 32, constraint col+row permute, distinct?: 4/39 s
+;; struct-size 6, warpSize 32, constraint col+row permute, distinct?: unsat
+;; struct-size 7, warpSize 32, constraint col+row permute, distinct?: 8/156 s
+;; struct-size 8, warpSize 32, constraint col+row permute, distinct?: 6/43 s
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
   #|
   (define log-a (bvlog a))
@@ -225,9 +225,15 @@
 
 (define (synthesis)
   (pretty-display "solving...")
-  (define sol (time (solve (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
-                                           (list 32))))))
+  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
+                                           (list 32)))
+  (define cost (get-cost))
+  
+  (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
+
+  (define this-cost (evaluate cost sol))
   (print-forms sol)
+  (pretty-display `(cost ,this-cost))
   )
 (synthesis)
 

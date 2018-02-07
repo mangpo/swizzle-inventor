@@ -366,7 +366,7 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 5)))
+    (f 0 8)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
