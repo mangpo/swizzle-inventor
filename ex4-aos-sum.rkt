@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 7)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -273,18 +273,7 @@
    (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
            (list 32)))
   (define cost (get-cost))
-
-  ;; slow
-  #|
-  (define solver (current-solver))
-  (solver-assert solver (asserts))
-  ;(solver-minimize (current-solver) (list cost))
-  (define sol (solver-check solver))
-|#
-
-  ;; fast
-  ;;(define sol (time (solve (assert #t))))
-  (define sol (optimize #:minimize (list cost) #:guarantee (assert #t)))
+  (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
 
   (define this-cost (evaluate cost sol))
   (print-forms sol)
