@@ -32,6 +32,7 @@
   ret)
 
 (define (AOS-load-spec threadId blockID blockDim I O a b c)
+  (pretty-display `(AOS-load-spec))
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
@@ -43,7 +44,7 @@
                       (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f)
   )
 
-
+(define permute (for/vector ([i 32]) #(0 4 1 5 2 3)))
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
@@ -66,14 +67,15 @@
            ;[inter-l (+ 1 (modulo (+ i (* -1 j)) struct-size))]
            [inter-l (modulo (+ i 1 (* -1 j)) struct-size)]
            [index (modulo (+ (quotient inter-l c) (* i a) (* -1 a j)) struct-size)] ;; q2
+           ;[index (get permute (modulo (- i j) struct-size))]
            [lane (+ (modulo (+ i (quotient j b)) struct-size) (* j struct-size))]  ;; step 2 (row shuffle): lane = d'(j)
            [x (shfl (get I-cached index) lane)]
            [index-o (modulo (+ i (quotient j b)) struct-size)] ;; step 3 (column rotate): index-o = r(i)
            )
-      (pretty-display `(index-i ,index))
-      (pretty-display `(lane ,lane))
-      (pretty-display `(x ,x))
-      (pretty-display `(index-o ,index-o))
+      (pretty-display `(index-i ,i ,index))
+      ;(pretty-display `(lane ,lane))
+      ;(pretty-display `(x ,x))
+      ;(pretty-display `(index-o ,index-o))
       (newline)
       (set O-cached index-o x))
       )
