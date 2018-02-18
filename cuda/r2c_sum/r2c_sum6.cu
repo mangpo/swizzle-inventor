@@ -25,7 +25,7 @@
 #include <cuda_runtime.h>
 
 #include <helper_cuda.h>
-#define THREADS 64
+#define THREADS 256
 #define WARP_SIZE 32
 #define RC
 
@@ -41,9 +41,7 @@ struct unit {
 // 6: 24926 vs 19143 vs 30347
 __global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
 {
-    int localId = threadIdx.x;
-    int offset = blockIdx.x * blockDim.x;
-    int globalId = offset + localId;
+    int globalId = threadIdx.x + blockDim.x * blockIdx.x;
 
     //if(globalId < sizeOfA) {
     int sum = 0;
@@ -60,14 +58,14 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
     int warp_id = threadIdx.x/WARP_SIZE;
     int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
-    __shared__ int x[threadIdx.x][M];
+    __shared__ int x[THREADS][M];
 
     unsigned mask = __activemask();
     int sum = 0;
 
     //if(globalId < sizeOfA) {
       for(int i=0; i<M; i++) {
-	x[i] = A[warp_offset + j + i*WARP_SIZE];
+	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
       }
 
     
@@ -77,49 +75,15 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 	int index = ((a * (i-j)) + inter/c) % M;
 	if(index < 0) index += M;
         int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
-        sum += __shfl_sync(mask, x[index], lane);
+        sum += __shfl_sync(mask, x[threadIdx.x][index], lane);
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
     //}
 }
+
 
 __global__ void r2c_lit (const int *A, int *B, int sizeOfA)
-{
-
-    int warp_id = threadIdx.x/WARP_SIZE;
-    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
-    int j = threadIdx.x % WARP_SIZE;
-    int x[M];
-    __shared__ int perm[6]; // = {0, 4, 1, 5, 2, 3};
-    perm[0] = 0;
-    perm[1] = 4;
-    perm[2] = 1;
-    perm[3] = 5;
-    perm[4] = 2;
-    perm[5] = 3;
- 
-    unsigned mask = __activemask();
-    int sum = 0;
-
-    //if(globalId < sizeOfA) {
-    #pragma unroll
-      for(int i=0; i<M; i++) {
-	x[i] = A[warp_offset + j + i*WARP_SIZE];
-      }
-
-      #pragma unroll
-      for(int i=0; i<M; i++) {
-	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
-        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
-        sum += __shfl_sync(mask, x[perm[index]], lane);
-      }
-
-   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
-    //}
-}
-
-__global__ void r2c_lit2 (const int *A, int *B, int sizeOfA)
 {
 
     int warp_id = threadIdx.x/WARP_SIZE;
@@ -138,16 +102,79 @@ __global__ void r2c_lit2 (const int *A, int *B, int sizeOfA)
     int sum = 0;
 
     //if(globalId < sizeOfA) {
-    #pragma unroll
       for(int i=0; i<M; i++) {
 	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
       }
 
-      #pragma unroll
       for(int i=0; i<M; i++) {
 	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
         int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
         sum += __shfl_sync(mask, x[threadIdx.x][perm[index]], lane);
+      }
+
+   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
+    //}
+}
+
+
+__global__ void r2c_lit_reg (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+    __shared__ int __align__(16) x[THREADS][M];
+    int perm = 0x325140;
+ 
+    unsigned mask = __activemask();
+    int sum = 0;
+
+    //if(globalId < sizeOfA) {
+      for(int i=0; i<M; i++) {
+	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
+      }
+
+      for(int i=0; i<M; i++) {
+	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
+        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+        sum += __shfl_sync(mask, x[threadIdx.x][(perm >> (index*4)) & 0x7], lane);
+      }
+
+   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
+    //}
+}
+
+
+__constant__ int myperm[6];
+__global__ void r2c_lit_const (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+    __shared__ int __align__(16) x[THREADS][M];
+    /*
+     __shared__ int perm[6]; // <-- using constant
+    perm[0] = 0;
+    perm[1] = 4;
+    perm[2] = 1;
+    perm[3] = 5;
+    perm[4] = 2;
+    perm[5] = 3;
+    */
+ 
+    unsigned mask = __activemask();
+    int sum = 0;
+
+    //if(globalId < sizeOfA) {
+      for(int i=0; i<M; i++) {
+	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
+      }
+
+      for(int i=0; i<M; i++) {
+	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
+        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+        sum += __shfl_sync(mask, x[threadIdx.x][myperm[index]], lane);
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
@@ -161,11 +188,22 @@ __global__ void r2c_lit2 (const int *A, int *B, int sizeOfA)
 int
 main(void)
 {
+  // Define constants
+  int perm[6];
+  perm[0] = 0;
+  perm[1] = 4;
+  perm[2] = 1;
+  perm[3] = 5;
+  perm[4] = 2;
+  perm[5] = 3;
+  cudaMemcpyToSymbol(myperm, perm, 6*sizeof(int));
+  
     // Error code to check return values for CUDA calls
     cudaError_t err = cudaSuccess;
 
     // Print the vector length to be used, and compute its size
-    int numElements = 64000000;
+    //int numElements = 64000000;
+    int numElements = THREADS * 15 * 8 * 100;
     size_t size = numElements * sizeof(int);
     printf("[Vector addition of %d elements]\n", numElements);
 
@@ -232,26 +270,51 @@ main(void)
 
     // Launch the Vector Add CUDA Kernel
     struct timeval t0, t1, t2;
+    float time0, time1;
+    cudaEvent_t start0, stop0, start1, stop1;
+    cudaEventCreate(&start0);
+    cudaEventCreate(&stop0);
+    cudaEventCreate(&start1);
+    cudaEventCreate(&stop1);
+
     int threadsPerBlock = THREADS;
-    int blocksPerGrid =(numElements + threadsPerBlock - 1) / (threadsPerBlock);
+    int blocksPerGrid = (numElements + threadsPerBlock - 1) / (threadsPerBlock);
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     // TODO: use CUDA event timer
     r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
     cudaDeviceSynchronize();
-    gettimeofday(&t0, NULL); 
-    r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
+    
+    cudaEventRecord(start0,0);
+    gettimeofday(&t0, NULL);
+    for(int i=0; i<10; i++)
+      r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
+    cudaEventRecord(stop0,0);
     cudaDeviceSynchronize();
     gettimeofday(&t1, NULL);
-    r2c_lit2<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+    
+    cudaEventRecord(start1,0);
+    for(int i=0; i<10; i++)
+      r2c_lit_reg<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+    cudaEventRecord(stop1,0);
     cudaDeviceSynchronize();
     gettimeofday(&t2, NULL);
     
     err = cudaGetLastError();
     long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
     long elapsed2 = (t2.tv_sec-t1.tv_sec)*1000000 + t2.tv_usec-t1.tv_usec;
-    printf("execution time 1: %ld us\n", elapsed);
-    printf("execution time 2: %ld us\n", elapsed2);
+    printf("direct load:  %ld us\n", elapsed);
+    printf("shuffle load: %ld us\n", elapsed2);
+
+    cudaEventElapsedTime(&time0, start0, stop0);
+    cudaEventElapsedTime(&time1, start1, stop1);
+    cudaEventDestroy(start0);
+    cudaEventDestroy(stop0);
+    cudaEventDestroy(start1);
+    cudaEventDestroy(stop1);
+    
+    printf("direct load (cuda):  %f ms\n", time0);
+    printf("shuffle load (cuda): %f ms\n", time1);
 
     if (err != cudaSuccess)
     {
