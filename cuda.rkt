@@ -244,7 +244,8 @@
     (if (= pattern-x 1)
         (* 4 (apply * sizes))
         (* 4 16 (apply * sizes))))
-  (set! cost (+ cost my-cost)))
+  (set! cost (+ cost my-cost))
+  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

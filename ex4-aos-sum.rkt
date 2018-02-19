@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 7)
+(define struct-size 6)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -152,6 +152,85 @@
       (accumulate o x #:pred (= localId localId))))
    (reg-to-global o O gid))
 
+(define (AOS-sum-test6-v2 threadId blockID blockDim I O I-sizes O-sizes a b c)
+   (define I-cached (create-matrix (x-y-z struct-size)))
+   (define warpID (get-warpId threadId))
+   (define offset
+     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+   (define gid (get-global-threadId threadId blockID))
+   (global-to-warp-reg
+    I
+    I-cached
+    (x-y-z 1)
+    (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
+    (x-y-z (* warpSize struct-size))
+    #f)
+   (define localId (get-idInWarp threadId))
+   (define o (create-accumulator o (list +) identity blockDim))
+   (define indices (make-vector struct-size))
+   (define lb
+     (modulo
+      (+ (+ (* localId struct-size) (quotient localId warpSize)) 0)
+      warpSize))
+   (define ub (modulo (+ lb struct-size) warpSize))
+   (define lane (modulo (+ lb (quotient localId b)) warpSize))
+   (for/bounded
+    ((i struct-size))
+    (let* ((index
+            (get
+             permute
+             (modulo
+              (+
+               (+ (* (@dup i) struct-size) (quotient (@dup i) 1))
+               (+ (* localId 0) (quotient localId -1))
+               struct-size)
+              struct-size)))
+           (x (shfl (get I-cached index) lane)))
+      (vector-set! indices i index)
+      (accumulate o x #:pred (= localId localId))
+      (set! lane
+        (modulo (+ (+ (* lane warpSize) (quotient lane 1)) 1) warpSize))
+      (set! lane (ite (= lane ub) lb lane))))
+   (reg-to-global o O gid))
+
+(define (AOS-sum-test6-v1 threadId blockID blockDim I O I-sizes O-sizes a b c)
+   (define I-cached (create-matrix (x-y-z struct-size)))
+   (define warpID (get-warpId threadId))
+   (define offset
+     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+   (define gid (get-global-threadId threadId blockID))
+   (global-to-warp-reg
+    I
+    I-cached
+    (x-y-z 1)
+    (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
+    (x-y-z (* warpSize struct-size))
+    #f)
+   (define localId (get-idInWarp threadId))
+   (define o (create-accumulator o (list +) identity blockDim))
+   (define indices (make-vector struct-size))
+   (define lb (modulo (* localId struct-size) warpSize))
+   (define ub (modulo (+ lb struct-size) warpSize))
+   (define lane (modulo (+ lb (quotient localId b)) warpSize))
+   (for/bounded
+    ((i struct-size))
+    (let* ((index
+            (get
+             permute
+             (modulo
+              (+
+               (+ (* (@dup i) c) (quotient (@dup i) -1))
+               (+ (* localId 0) (quotient localId -1))
+               struct-size)
+              struct-size)))
+           (x (shfl (get I-cached index) lane)))
+      (vector-set! indices i index)
+      (accumulate o x #:pred (<= (@dup i) (@dup i)))
+      (set! lane
+        (modulo (+ (+ (* lane 1) (quotient lane warpSize)) 1) warpSize))
+      (set! lane (ite (= lane ub) lb lane))))
+   (reg-to-global o O gid))
+
 (define (AOS-sum-test3 threadId blockID blockDim I O I-sizes O-sizes a b c)
    (define I-cached (create-matrix (x-y-z struct-size)))
    (define warpID (get-warpId threadId))
@@ -215,6 +294,14 @@
 ;; m = 3, warpsize = 32: 71/155
 ;; m = 3, warpsize = 32, constraint col+row permute, distinct?: 33/140
 ;; m = 3, warpsize = 32, Ras's sketch: 4/10
+
+;; m = 6, warpsize = 32, perm array: 32/1362 s
+;; m = 6, warpsize = 32, perm array, strength reduction for lane: 11/388 s (cost 25948)
+
+;; (cost 24924)
+;; (cost 23132)
+;; (cost 22364)
+(define permute (for/vector ([i 64]) #(0 4 1 5 2 3)))
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   #|
   (define log-a (bvlog a))
@@ -239,17 +326,37 @@
   (define localId (get-idInWarp threadId))
   (define o (create-accumulator o (list +) identity blockDim))
   (define indices (make-vector struct-size))
+  ;(define lb (?lane-mod1 localId [a b c struct-size warpSize] 0))
+  (define lb (modulo (* localId struct-size) warpSize))
+  ;(define ub (?lane-mod2 lb localId [a b c struct-size warpSize] 0))
+  (define ub (modulo (+ lb struct-size) warpSize))
+  ;(define lane (?lane-mod2 lb localId [a b c struct-size warpSize] 0))
+  (define lane (modulo (+ lb (quotient localId b)) warpSize))
+  ;(pretty-display `(cost ,(get-cost))) ; (cost 3278)
   (for/bounded ([i struct-size])
     (let* (;[index (modulo (?index localId (@dup i) [a b c struct-size warpSize] 2) struct-size)]
            ;[lane (?lane localId (@dup i) [a b c struct-size warpSize] 4)]
            ;[index (@int (extract (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 2) log-m))]
            ;[lane (@int (?lane-log (@bv localId) (@dup (@bv i)) [log-a log-b log-c log-m log-n] 4))]
-           [index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
-           [lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           ;[index (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0)]
+           
+           [index (get permute (modulo (- i localId) struct-size))]
+           ;[index (get permute (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 0))]
+           ;[lane (+ (modulo (+ i (quotient localId b)) struct-size) (* localId struct-size))]
+           ;[lane (?lane-mod2 (@dup i) localId [a b c struct-size warpSize] 1)]
            [x (shfl (get I-cached index) lane)])
       ;(unique-warp (modulo lane warpSize))
       (vector-set! indices i index)
-      (accumulate o x #:pred (?cond localId (@dup i)))
+      (accumulate o x #:pred #t) ;(?cond localId (@dup i)))
+      ;(set! lane (?lane-mod1 lane [a b c struct-size warpSize] 0))
+      ;(set! lane (modulo (+ lane 1) warpSize))
+      (set! lane (modulo (+ (+ (* lane (?const a b c struct-size warpSize))
+                               (choose 0 (quotient lane (?const a b c struct-size warpSize)))
+                               ;0
+                               )
+                            (?const a b c struct-size warpSize))
+                         warpSize))
+      (set! lane (ite (= lane ub) lb lane))
       ))
   #;(for ([t blockSize])
     (let ([l (for/list ([i struct-size])
@@ -259,10 +366,10 @@
   (reg-to-global o O gid)
   )
 
-
+; spec 14044
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test2 w)])
+    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-sketch w)])
       (pretty-display `(test ,w ,ret ,(get-cost)))))
   )
 ;(test)
@@ -273,11 +380,15 @@
    (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
            (list 32)))
   (define cost (get-cost))
+  ;(assert (= cost 14044))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
 
   (define this-cost (evaluate cost sol))
   (print-forms sol)
   (pretty-display `(cost ,this-cost))
+  
+  ;(define sol2 (solve (assert (< cost this-cost))))
+  ;(pretty-display `(cost2 ,(evaluate cost sol2)))
   )
 (synthesis)
 
