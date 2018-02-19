@@ -1,6 +1,7 @@
 #lang rosette
 
-(require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
+(require "util.rkt" "cuda.rkt")
+(require rosette/lib/synthax)
 
 (define struct-size 6)
 (define n-block 2)
@@ -61,7 +62,7 @@
     (let* ([index (get permute (modulo (- i localId) struct-size))]
            [x (shfl (get I-cached index) lane)])
       (accumulate o x #:pred #t)
-      (set! lane (modulo (+ (+ lane (choose 0 (quotient lane (?const a b c struct-size warpSize))))
+      (set! lane (modulo (+ (+ lane (choose 0 (quotient lane (choose a b c struct-size warpSize))))
                             1)
                          warpSize))
       (set! lane (ite (= lane ub) lb lane))
