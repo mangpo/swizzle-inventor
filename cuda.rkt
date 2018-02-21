@@ -7,7 +7,6 @@
       (regexp-replace #rx"@" name "")
       name))
 
-;(require (only-in rosette [+ p+] [* p*] [modulo p-modulo] [< p<] [<= p<=] [> p>] [>= p>=] [= p=] [if p-if]))
 (require (only-in racket [sort %sort] [< %<]))
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite]
                      [@bvadd bvadd] [@bvsub bvsub] [@bvand bvand] [@bvxor bvxor] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
@@ -86,6 +85,9 @@
     (define my-op (lambda l (@op l)))
     ))
 
+(define-operator @++ $++ +)
+(define-operator @** $** *)
+
 (define-operator @+ $+ +)
 (define-operator @- $- -)
 (define-operator @* $* *)
@@ -138,12 +140,15 @@
   (cond
     [(member op (list @+ @- @> @>= @< @<= @= @bvadd @bvsub @bvand @bvxor @bvshl @bvlshr)) 1]
     [(member op (list @* @modulo @quotient)) 2]
+    [(member op (list @++ @**)) 0]
     [else (assert `(cost-of ,op unimplemented))]))
 
 (define (zero? x) (= x 0))
 (define (one? x) (= x 1))
+(define (minus-one? x) (= x -1))
 (define (zero-bv? x) (= x (bv 0 BW)))
 (define (one-bv? x) (= x (bv 1 BW)))
+(define (minus-one-bv? x) (= x (bv -1 BW)))
 
 (define (all? x f)
   (cond
@@ -183,37 +188,42 @@
       [(member op (list @+ @-))
        ;(pretty-display `(@modulo ,ret))
        (cond
+         [(all? (first args) zero?) 0]
          [(all? (second args) zero?) 0]
          [(all? ret zero?) 0]
-         [else (* op-cost (size-of ret))])]
+         [else op-cost])]
 
       [(member op (list @modulo))
        (cond
          [(all? (second args) one?) 0]
-         [else (* op-cost (size-of ret))])]
+         [else op-cost])]
       
       [(member op (list @*))
        ;(pretty-display `(@* ,ret))
        (cond
+         [(all? (first args) zero?) 0]
+         [(all? (first args) one?) 0]
+         [(all? (first args) minus-one?) 0]
          [(all? (second args) zero?) 0]
          [(all? (second args) one?) 0]
-         [else (* op-cost (size-of ret))])]
+         [(all? (second args) minus-one?) 0]
+         [else op-cost])]
       
       [(member op (list @quotient))
        (cond
          [(all? (second args) one?) 0]
-         [else (* op-cost (size-of ret))])]
+         [else op-cost])]
       
       [(member op (list @bvadd @bvsub))
        (cond
          [(all? ret zero-bv?) 0]
-         [else (* op-cost (size-of ret))])]
+         [else op-cost])]
       
       [(member op (list @bvshl @bvlshr))
        (cond
          [(all? (second args) zero-bv?) 0]
-         [else (* op-cost (size-of ret))])]
-      [else (* op-cost (size-of ret))]
+         [else op-cost])]
+      [else op-cost]
       ))
   (set! cost (+ cost inc))
   )
@@ -223,17 +233,25 @@
   (define (f ops vals)
     (cond
       [(vector? vals)
-       (* (cost-of (car ops)) (vector-length vals)
-          (f (cdr ops) (vector-ref vals 0)))]
+       (* (vector-length vals)
+          (+ (cost-of (car ops)) (f (cdr ops) (vector-ref vals 0))))]
       
       [(list? vals)
-       (* (cost-of (car ops)) (length vals)
-          (f (cdr ops) (car vals)))]
+       (* (length vals)
+          (+ (cost-of (car ops)) (f (cdr ops) (car vals))))]
       
-      [(empty? ops) 1]
+      [(empty? ops) 0]
       [else (cost-of (car ops))]
       ))
-  (define inc (f ops vals))
+
+  (define inc
+    (cond
+      [(vector? vals)
+       (+ (cost-of (last ops))
+          (f (cdr (reverse ops)) (vector-ref vals 0)))]
+      
+      [else
+       (f (reverse ops) vals)]))
   ;(pretty-display `(accumulate-cost ,ops ,(size-of vals) ,inc))
   (set! cost (+ cost inc))
   )
@@ -242,8 +260,8 @@
   (define pattern-x (get-x pattern))
   (define my-cost
     (if (= pattern-x 1)
-        (* 4 (apply * sizes))
-        (* 4 16 (apply * sizes))))
+        (+ 1 (quotient (apply * sizes) blockSize))
+        (* 4 (+ 1 (quotient (apply * sizes) blockSize)))))
   (set! cost (+ cost my-cost))
   )
 
@@ -368,7 +386,7 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 8)))
+    (f 0 6)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
@@ -476,7 +494,7 @@
               [i-src (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
 
-  (set! cost (+ cost len))
+  (set! cost (+ cost 2))
   res)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -632,7 +650,7 @@
 (define (get-global-threadId threadId blockId)
   ;(pretty-display `(get-global-threadId ,threadId ,blockId ,blockDim))
   (if (list? threadId)
-      (@+ threadId (@* blockId blockDim))
+      (@++ threadId (@** blockId blockDim))
       (for/vector ([id threadId])
         (get-global-threadId id blockId))))
 
