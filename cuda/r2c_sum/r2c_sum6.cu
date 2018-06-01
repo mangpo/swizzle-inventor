@@ -145,6 +145,77 @@ __global__ void r2c_lit_reg (const int *A, int *B, int sizeOfA)
 }
 
 
+
+__global__ void r2c_lit_reg_strength (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+    __shared__ int __align__(16) x[THREADS][M];
+    int perm = 0x325140;
+ 
+    unsigned mask = __activemask();
+    int sum = 0;
+    int lb = (j * M) % WARP_SIZE;
+    int ub = (lb + M) % WARP_SIZE;
+    int lane = (lb + j/b) % WARP_SIZE;
+
+    //if(globalId < sizeOfA) {
+      for(int i=0; i<M; i++) {
+	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
+      }
+
+      for(int i=0; i<M; i++) {
+	int index = (i - j) % M;
+        sum += __shfl_sync(mask, x[threadIdx.x][(perm >> (index*4)) & 0x7], lane);
+	lane = (lane + 1) % WARP_SIZE;
+	if(lane == ub) lane = lb;
+      }
+
+   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
+    //}
+}
+
+__global__ void r2c_lit_reg2 (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+    //__shared__ int __align__(16) x[THREADS][M];
+    int perm = 0x325140;
+    int x0,x1,x2,x3,x4,x5;
+ 
+    unsigned mask = __activemask();
+    int sum = 0;
+
+    //if(globalId < sizeOfA) {
+      x0 = A[warp_offset + j + 0*WARP_SIZE];
+      x1 = A[warp_offset + j + 1*WARP_SIZE];
+      x2 = A[warp_offset + j + 2*WARP_SIZE];
+      x3 = A[warp_offset + j + 3*WARP_SIZE];
+      x4 = A[warp_offset + j + 4*WARP_SIZE];
+      x5 = A[warp_offset + j + 5*WARP_SIZE];
+
+      for(int i=0; i<M; i++) {
+	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
+        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+	int in = (perm >> (index*4)) & 0x7;
+	int x;
+	if(in == 0) x = x0;
+	else if(in == 1) x = x1;
+	else if(in == 2) x = x2;
+	else if(in == 3) x = x3;
+	else if(in == 4) x = x4;
+	else x = x5;
+        sum += __shfl_sync(mask, x, lane);
+      }
+
+   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
+    //}
+}
+
 __constant__ int myperm[6];
 __global__ void r2c_lit_const (const int *A, int *B, int sizeOfA)
 {

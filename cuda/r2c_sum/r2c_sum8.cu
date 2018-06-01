@@ -25,7 +25,7 @@
 #include <cuda_runtime.h>
 
 #include <helper_cuda.h>
-#define THREADS 64
+#define THREADS 256
 #define WARP_SIZE 32
 
 #define M 8
@@ -60,14 +60,14 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
     int warp_id = threadIdx.x/WARP_SIZE;
     int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
-    int x[M];
+    __shared__ int x[THREADS][M];
 
     unsigned mask = __activemask();
     int sum = 0;
 
     //if(globalId < sizeOfA) {
       for(int i=0; i<M; i++) {
-	x[i] = A[warp_offset + j + i*WARP_SIZE];
+	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
       }
 
 
@@ -77,7 +77,7 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 	if(index < 0) index += M;
 	int lane2 = (i + j/b - 1 + M) % M;
 	int lane = (j*M + lane2) % WARP_SIZE;
-        sum += __shfl_sync(mask, x[index], lane);
+        sum += __shfl_sync(mask, x[threadIdx.x][index], lane);
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
@@ -118,7 +118,7 @@ main(void)
     cudaError_t err = cudaSuccess;
 
     // Print the vector length to be used, and compute its size
-    int numElements = 64000000;
+    int numElements = THREADS * 15 * 8 * 100;
     size_t size = numElements * sizeof(int);
     printf("[Vector addition of %d elements]\n", numElements);
 
@@ -185,25 +185,51 @@ main(void)
 
     // Launch the Vector Add CUDA Kernel
     struct timeval t0, t1, t2;
+    float time0, time1;
+    cudaEvent_t start0, stop0, start1, stop1;
+    cudaEventCreate(&start0);
+    cudaEventCreate(&stop0);
+    cudaEventCreate(&start1);
+    cudaEventCreate(&stop1);
+
     int threadsPerBlock = THREADS;
-    int blocksPerGrid =(numElements + threadsPerBlock - 1) / (threadsPerBlock);
+    int blocksPerGrid = (numElements + threadsPerBlock - 1) / (threadsPerBlock);
     printf("CUDA kernel launch with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
-    
+
+    // TODO: use CUDA event timer
     r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
     cudaDeviceSynchronize();
-    gettimeofday(&t0, NULL); 
-    r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
+    
+    cudaEventRecord(start0,0);
+    gettimeofday(&t0, NULL);
+    for(int i=0; i<10; i++)
+      r2c_naive<<<blocksPerGrid, threadsPerBlock>>>((struct unit *) d_A, d_B, numElements);
+    cudaEventRecord(stop0,0);
     cudaDeviceSynchronize();
     gettimeofday(&t1, NULL);
-    r2c_mod<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+    
+    cudaEventRecord(start1,0);
+    for(int i=0; i<10; i++)
+      r2c_mod<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+    cudaEventRecord(stop1,0);
     cudaDeviceSynchronize();
     gettimeofday(&t2, NULL);
     
     err = cudaGetLastError();
     long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
     long elapsed2 = (t2.tv_sec-t1.tv_sec)*1000000 + t2.tv_usec-t1.tv_usec;
-    printf("execution time 1: %ld us\n", elapsed);
-    printf("execution time 2: %ld us\n", elapsed2);
+    printf("direct load:  %ld us\n", elapsed);
+    printf("shuffle load: %ld us\n", elapsed2);
+
+    cudaEventElapsedTime(&time0, start0, stop0);
+    cudaEventElapsedTime(&time1, start1, stop1);
+    cudaEventDestroy(start0);
+    cudaEventDestroy(stop0);
+    cudaEventDestroy(start1);
+    cudaEventDestroy(stop1);
+    
+    printf("direct load (cuda):  %f ms\n", time0);
+    printf("shuffle load (cuda): %f ms\n", time1);
 
     if (err != cudaSuccess)
     {
