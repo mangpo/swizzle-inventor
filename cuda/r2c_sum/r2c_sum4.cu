@@ -39,17 +39,19 @@ struct unit {
 
 // 
 
-__global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
+__global__ void r2c_naive (const struct unit *A, int *B, const int sizeOfA)
 {
     int localId = threadIdx.x;
     int offset = blockIdx.x * blockDim.x;
     int globalId = offset + localId;
 
     //if(globalId < sizeOfA) {
-    int sum = 0;
-      for(int i=0; i<M; i++) {
-    	sum += A[globalId].x[i];
-      }
+    struct unit x = A[globalId];
+    int sum = x.x[0];
+    #pragma unroll
+    for(int i=1; i<M; i++) {
+    	sum += x.x[i];
+	}
     //}
     B[globalId] = sum;
 }
@@ -72,6 +74,7 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 
 
       // c = 4, a = 1, b = 8
+      #pragma unroll
       for(int i=0; i<M; i++) {
 	int index = (-i + j + j/M + 1) % M;
 	if(index < 0) index += M;
