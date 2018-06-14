@@ -455,8 +455,15 @@
   (reg-to-global o O gid)
   )
 
-;; synthesize p2, p3, index: 56/2163 s
-(define (AOS-sum-sketch2 threadId blockID blockDim I O I-sizes O-sizes a b c)
+;; m = 6
+;; synthesize r27, p2, p3, i+?, index: 56/2163 s
+;; synthesize r27, r20,22,24, log m steps: 6/45 s
+;; synthesize r27, r20--24, log m steps: 6/337 s
+;; m = 4: 2/20
+;; m = 5: unsat
+;; m = 7: unsat
+;; m = 8:
+(define (AOS-sum-sketch6 threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
@@ -476,28 +483,33 @@
   
   (reset-cost)
 
-  (define r20 (modulo (* 3 localId) warpSize))
-  (define r22 (modulo (+ 2 (* 3 localId)) warpSize))
-  (define r24 (modulo (+ 1 (* 3 localId)) warpSize))
+  (define r0 (?lane-mod1 localId [2 16 a b c struct-size warpSize] 0))
+  (define r20 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r22 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r24 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
 
-  ;(define r27 (- localId (* 3 (quotient localId 3))))
-  ;(define p2 (= (modulo r27 2) 0))
-  ;(define p3 (= (modulo (quotient r27 2) 2) 0))
-  (define r27 (?lane-mod1 localId [a b c struct-size warpSize] 0))
-  (define p2 (= 0 (?lane-mod1 r27 [a b c struct-size warpSize] 1)))
-  (define p3 (= 0 (?lane-mod1 r27 [a b c struct-size warpSize] 1)))
+  (define r28 (?lane-mod1 localId [a b c struct-size warpSize] 0))
+  (define p1 (= (modulo r28 2) 0))
+  (define p2 (= (modulo (quotient r28 2) 2) 0))
+  (define p3 (= (modulo (quotient r28 4) 2) 0))
 
+  (define idx0 (create-matrix (x-y-z struct-size blockSize)))
   (define idx1 (create-matrix (x-y-z struct-size blockSize)))
   (define idx2 (create-matrix (x-y-z struct-size blockSize)))
   (for ([i struct-size])
-    (set idx1 (@dup i) (ite p2
+    (set idx0 (@dup i) (ite p1
                             (get I-cached (@dup i))
-                            (get I-cached (@dup (modulo (+ i (??)) struct-size)))))
+                            (get I-cached (@dup (modulo (+ i 1) struct-size)))))
+    )
+  (for ([i struct-size])
+    (set idx1 (@dup i) (ite p2
+                            (get idx0 (@dup i))
+                            (get idx0 (@dup (modulo (+ i 2) struct-size)))))
     )
   (for ([i struct-size])
     (set idx2 (@dup i) (ite p3
                             (get idx1 (@dup i))
-                            (get idx1 (@dup (modulo (+ i (??)) struct-size)))))
+                            (get idx1 (@dup (modulo (+ i 4) struct-size)))))
     )
 
   (accumulate o (shfl (get idx2 (@dup 0)) r20) #:pred (@dup #t))
@@ -506,14 +518,74 @@
   (accumulate o (shfl (get idx2 (@dup 3)) r22) #:pred (@dup #t))
   (accumulate o (shfl (get idx2 (@dup 4)) r24) #:pred (@dup #t))
   (accumulate o (shfl (get idx2 (@dup 5)) r24) #:pred (@dup #t))
+  (reg-to-global o O gid)
+  )
 
+
+;; 3/81 s
+(define (AOS-sum-sketch8 threadId blockID blockDim I O I-sizes O-sizes a b c)
+  
+  (define I-cached (create-matrix (x-y-z struct-size)))
+  (define warpID (get-warpId threadId))
+  (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
+  (define gid (get-global-threadId threadId blockID))
+  (global-to-warp-reg I I-cached
+                        (x-y-z 4) ;; stride
+                        ;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
+                        (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
+                        ;(x-y-z (?warp-size warpSize 1)) ;; load size
+                        (x-y-z (* warpSize struct-size))
+                        #f)
+
+  (define localId (get-idInWarp threadId))
+  (define o (create-accumulator o (list +) identity blockDim))
+  (define indices (make-vector struct-size))
+  
+  (reset-cost)
+
+  (define r24 (?lane-mod1 localId [2 16 a b c struct-size warpSize] 0))
+  (define r26 (?lane-mod2 r24 localId [2 16 a b c struct-size warpSize] 0))
+  (define r30 (?lane-mod2 r24 localId [2 16 a b c struct-size warpSize] 0))
+
+  (define r28 (?lane-mod1 localId [a b c struct-size warpSize] 0))
+  (define p1 (= (modulo r28 2) 0))
+  (define p2 (= (modulo (quotient r28 2) 2) 0))
+  (define p3 (= (modulo (quotient r28 4) 2) 0))
+
+  (define idx0 (create-matrix (x-y-z struct-size blockSize)))
+  (define idx1 (create-matrix (x-y-z struct-size blockSize)))
+  (define idx2 (create-matrix (x-y-z struct-size blockSize)))
+  (for ([i struct-size])
+    (set idx0 (@dup i) (ite p1
+                            (get I-cached (@dup i))
+                            (get I-cached (@dup (modulo (+ i 1) struct-size)))))
+    )
+  (for ([i struct-size])
+    (set idx1 (@dup i) (ite p2
+                            (get idx0 (@dup i))
+                            (get idx0 (@dup (modulo (+ i 2) struct-size)))))
+    )
+  (for ([i struct-size])
+    (set idx2 (@dup i) (ite p3
+                            (get idx1 (@dup i))
+                            (get idx1 (@dup (modulo (+ i 4) struct-size)))))
+    )
+
+  (accumulate o (shfl (get idx2 (@dup 0)) r26) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 1)) r26) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 2)) r26) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 3)) r26) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 4)) r30) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 5)) r30) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 6)) r30) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 7)) r30) #:pred (@dup #t))
   (reg-to-global o O gid)
   )
 
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-sketch2 w)])
+    (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-sketch6 w)])
       (pretty-display `(test ,w ,ret ,(get-cost)))))
   )
 ;(test)
@@ -521,7 +593,7 @@
 (define (synthesis)
   (pretty-display "solving...")
   (assert
-   (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch2 w))
+   (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch6 w))
            (list 32)))
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
