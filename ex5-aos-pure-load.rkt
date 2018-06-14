@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 8)
+(define struct-size 6)
 (define n-block 1)
 
 (define (create-IO warpSize)
