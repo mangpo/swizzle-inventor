@@ -39,17 +39,69 @@ struct unit {
 };
 
 // 6: 24926 vs 19143 vs 30347
-__global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
+__global__ void r2c_naive (const struct unit *A, int *B, int sizeOfA)
 {
     int globalId = threadIdx.x + blockDim.x * blockIdx.x;
 
     //if(globalId < sizeOfA) {
     int sum = 0;
+    #pragma unroll
       for(int i=0; i<M; i++) {
     	sum += A[globalId].x[i];
       }
     //}
     B[globalId] = sum;
+}
+
+__global__ void r2c_bug (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+
+    struct unit x0,x1,x2;
+
+    unsigned mask = __activemask();
+    int sum = 0;
+
+    #pragma unroll
+    for(int i=0; i<M; i+=2) {
+      x0.x[i] = A[warp_offset + 2*j + i*WARP_SIZE];
+      x0.x[i+1] = A[warp_offset + 2*j + i*WARP_SIZE + 1];
+    }
+
+    int r20 = (3*j) & 31;
+    int r22 = (3*j + 2) & 31;
+    int r24 = (3*j + 1) & 31;
+
+    int r27 = (j - 3*(j/3));
+
+    #pragma unroll
+    for(int i=0; i<M; i++) {
+      if((r27 & 1) == 0)
+	x1.x[i] = x0.x[i];
+      else
+	x1.x[i] = x0.x[(i+2)%M];
+      //x1.x[i] = (r27 & 1 != 1)? x0.x[i]: x0.x[(i+2)%M];
+    }
+    #pragma unroll
+    for(int i=0; i<M; i++) {
+      if((r27 & 2) == 0)
+	x2.x[i] = x1.x[i];
+      else
+	x2.x[i] = x1.x[(i-2+M)%M];
+      //x2.x[i] = (r27 & 2 == 0)? x1.x[i]: x1.x[(i-2)%M];
+    }
+    
+    sum += __shfl_sync(mask, x2.x[0], r20);
+    sum += __shfl_sync(mask, x2.x[1], r20);
+    sum += __shfl_sync(mask, x2.x[2], r22);
+    sum += __shfl_sync(mask, x2.x[3], r22);
+    sum += __shfl_sync(mask, x2.x[4], r24);
+    sum += __shfl_sync(mask, x2.x[5], r24);
+    
+    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
 }
 
 __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
@@ -102,6 +154,7 @@ __global__ void r2c_lit (const int *A, int *B, int sizeOfA)
     int sum = 0;
 
     //if(globalId < sizeOfA) {
+    #pragma unroll
       for(int i=0; i<M; i++) {
 	x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
       }
@@ -138,6 +191,38 @@ __global__ void r2c_lit_reg (const int *A, int *B, int sizeOfA)
 	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
         int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
         sum += __shfl_sync(mask, x[threadIdx.x][(perm >> (index*4)) & 0x7], lane);
+      }
+
+   B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
+    //}
+}
+
+__global__ void r2c_lit_reg_struct (const int *A, int *B, int sizeOfA)
+{
+
+    int warp_id = threadIdx.x/WARP_SIZE;
+    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    int j = threadIdx.x % WARP_SIZE;
+    //__shared__ int __align__(16) x[THREADS][M];
+    int perm = 0x325140;
+    struct unit s;
+ 
+    unsigned mask = __activemask();
+    int sum = 0;
+
+    //if(globalId < sizeOfA) {
+    #pragma unroll
+      for(int i=0; i<M; i++) {
+	//x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
+	s.x[i] = A[warp_offset + j + i*WARP_SIZE];
+      }
+
+      #pragma unroll
+      for(int i=0; i<M; i++) {
+	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
+        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+        //sum += __shfl_sync(mask, x[threadIdx.x][(perm >> (index*4)) & 0x7], lane);
+        sum += __shfl_sync(mask, s.x[(perm >> (index*4)) & 0x7], lane);
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
@@ -198,6 +283,7 @@ __global__ void r2c_lit_reg2 (const int *A, int *B, int sizeOfA)
       x4 = A[warp_offset + j + 4*WARP_SIZE];
       x5 = A[warp_offset + j + 5*WARP_SIZE];
 
+      #pragma unroll
       for(int i=0; i<M; i++) {
 	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
         int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
@@ -366,7 +452,7 @@ main(void)
     
     cudaEventRecord(start1,0);
     for(int i=0; i<10; i++)
-      r2c_lit_reg<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+      r2c_bug<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
     cudaEventRecord(stop1,0);
     cudaDeviceSynchronize();
     gettimeofday(&t2, NULL);
