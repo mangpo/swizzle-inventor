@@ -36,7 +36,7 @@
 
 struct unit {
   int x[M];
-};
+} __align__(8);
 
 // 6: 24926 vs 19143 vs 30347
 __global__ void r2c_naive (const struct unit *A, int *B, int sizeOfA)
@@ -53,12 +53,14 @@ __global__ void r2c_naive (const struct unit *A, int *B, int sizeOfA)
     B[globalId] = sum;
 }
 
-__global__ void r2c_bug (const int *A, int *B, int sizeOfA)
+__global__ void r2c_bug (const int2 *A, int *B, int sizeOfA)
 {
 
-    int warp_id = threadIdx.x/WARP_SIZE;
-    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+    //int warp_id = threadIdx.x/WARP_SIZE;
+    //int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
+    int global_tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int warp_offset = M * (global_tid - j);
 
     struct unit x0,x1,x2;
 
@@ -67,15 +69,19 @@ __global__ void r2c_bug (const int *A, int *B, int sizeOfA)
 
     #pragma unroll
     for(int i=0; i<M; i+=2) {
-      x0.x[i] = A[warp_offset + 2*j + i*WARP_SIZE];
-      x0.x[i+1] = A[warp_offset + 2*j + i*WARP_SIZE + 1];
+      int2 temp = A[warp_offset/2 + j + i*WARP_SIZE/2];
+      x0.x[i] = temp.x;
+      x0.x[i+1] = temp.y;
+      //x0.x[i] = A[warp_offset + 2*j + i*WARP_SIZE];
+      //x0.x[i+1] = A[warp_offset + 2*j + i*WARP_SIZE + 1];
     }
 
     int r20 = (3*j) & 31;
     int r22 = (3*j + 2) & 31;
     int r24 = (3*j + 1) & 31;
 
-    int r27 = (j - 3*(j/3));
+    //int r27 = (j - 3*(j/3));
+    int r27 = j % 3;
 
     #pragma unroll
     for(int i=0; i<M; i++) {
@@ -83,7 +89,6 @@ __global__ void r2c_bug (const int *A, int *B, int sizeOfA)
 	x1.x[i] = x0.x[i];
       else
 	x1.x[i] = x0.x[(i+2)%M];
-      //x1.x[i] = (r27 & 1 != 1)? x0.x[i]: x0.x[(i+2)%M];
     }
     #pragma unroll
     for(int i=0; i<M; i++) {
@@ -91,7 +96,6 @@ __global__ void r2c_bug (const int *A, int *B, int sizeOfA)
 	x2.x[i] = x1.x[i];
       else
 	x2.x[i] = x1.x[(i-2+M)%M];
-      //x2.x[i] = (r27 & 2 == 0)? x1.x[i]: x1.x[(i-2)%M];
     }
     
     sum += __shfl_sync(mask, x2.x[0], r20);
@@ -417,7 +421,7 @@ main(void)
     // Copy the host input vectors A and B in host memory to the device input vectors in
     // device memory
     printf("Copy input data from the host memory to the CUDA device\n");
-    err = cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
+    err = cudaMemcpy(d_A, h_A, size*M, cudaMemcpyHostToDevice);
 
     if (err != cudaSuccess)
     {
@@ -452,7 +456,7 @@ main(void)
     
     cudaEventRecord(start1,0);
     for(int i=0; i<10; i++)
-      r2c_bug<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B2, numElements);
+      r2c_bug<<<blocksPerGrid, threadsPerBlock>>>((int2 *) d_A, d_B2, numElements);
     cudaEventRecord(stop1,0);
     cudaDeviceSynchronize();
     gettimeofday(&t2, NULL);

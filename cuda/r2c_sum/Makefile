@@ -260,7 +260,7 @@ endif
 # Target rules
 All: build
 
-build: r2c_sum6
+build: r2c_sum5
 
 check.deps:
 ifeq ($(SAMPLE_ENABLED),0)
@@ -269,19 +269,19 @@ else
 	@echo "Sample is ready - all dependencies have been met"
 endif
 
-r2c_sum6.o: r2c_sum6.cu
+r2c_sum5.o: r2c_sum5.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-r2c_sum6: r2c_sum6.o
+r2c_sum5: r2c_sum5.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 	$(EXEC) mkdir -p ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 	$(EXEC) cp $@ ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)
 
 run: build
-	$(EXEC) ./r2c_sum6
+	$(EXEC) ./r2c_sum5
 
 clean:
-	rm -f r2c_sum6 r2c_sum6.o
-	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/r2c_sum6
+	rm -f r2c_sum5 r2c_sum5.o
+	rm -rf ../../bin/$(TARGET_ARCH)/$(TARGET_OS)/$(BUILD_TYPE)/r2c_sum5
 
 clobber: clean

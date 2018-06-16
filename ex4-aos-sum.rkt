@@ -460,9 +460,10 @@
 ;; synthesize r27, r20,22,24, log m steps: 6/45 s
 ;; synthesize r27, r20--24, log m steps: 6/337 s
 ;; m = 4: 2/20
-;; m = 5: unsat
-;; m = 7: unsat
-;; m = 8:
+;; m = 6: synthesize r27, r20,22,24+r0, log m steps:5/364 s
+;; m = 4: 1/8
+;; m = 5: 22/1778
+;; m = 7: 66/7043
 (define (AOS-sum-sketch6 threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix (x-y-z struct-size)))
@@ -485,8 +486,8 @@
 
   (define r0 (?lane-mod1 localId [2 16 a b c struct-size warpSize] 0))
   (define r20 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r21 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
   (define r22 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
-  (define r24 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
 
   (define r28 (?lane-mod1 localId [a b c struct-size warpSize] 0))
   (define p1 (= (modulo r28 2) 0))
@@ -514,15 +515,15 @@
 
   (accumulate o (shfl (get idx2 (@dup 0)) r20) #:pred (@dup #t))
   (accumulate o (shfl (get idx2 (@dup 1)) r20) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 2)) r22) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 3)) r22) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 4)) r24) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 5)) r24) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 2)) r21) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 3)) r21) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 4)) r22) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 5)) r22) #:pred (@dup #t))
   (reg-to-global o O gid)
   )
 
 
-;; 3/81 s
+;; m = 8: 3/81 s
 (define (AOS-sum-sketch8 threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix (x-y-z struct-size)))

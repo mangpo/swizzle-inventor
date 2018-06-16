@@ -12,12 +12,12 @@
 
 	// .globl	_Z9r2c_naivePK4unitPii
 .const .align 4 .b8 myperm[24];
-// _Z7r2c_modPKiPii$__cuda_local_var_34679_33_non_const_x has been demoted
-// _Z7r2c_litPKiPii$__cuda_local_var_34710_62_non_const_x has been demoted
-// _Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm has been demoted
-// _Z11r2c_lit_regPKiPii$__cuda_local_var_34745_62_non_const_x has been demoted
-// _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34806_62_non_const_x has been demoted
-// _Z13r2c_lit_constPKiPii$__cuda_local_var_34878_62_non_const_x has been demoted
+// _Z7r2c_modPKiPii$__cuda_local_var_34684_33_non_const_x has been demoted
+// _Z7r2c_litPKiPii$__cuda_local_var_34715_62_non_const_x has been demoted
+// _Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm has been demoted
+// _Z11r2c_lit_regPKiPii$__cuda_local_var_34750_62_non_const_x has been demoted
+// _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34811_62_non_const_x has been demoted
+// _Z13r2c_lit_constPKiPii$__cuda_local_var_34883_62_non_const_x has been demoted
 
 .visible .entry _Z9r2c_naivePK4unitPii(
 	.param .u64 _Z9r2c_naivePK4unitPii_param_0,
@@ -36,7 +36,7 @@
 	mov.u32 	%r2, %ntid.x;
 	mov.u32 	%r3, %ctaid.x;
 	mad.lo.s32 	%r4, %r3, %r2, %r1;
-	mul.wide.s32 	%rd4, %r4, 32;
+	mul.wide.s32 	%rd4, %r4, 24;
 	add.s64 	%rd5, %rd3, %rd4;
 	ld.global.u32 	%r5, [%rd5];
 	ld.global.u32 	%r6, [%rd5+4];
@@ -56,90 +56,86 @@
 	ret;
 }
 
-	// .globl	_Z7r2c_bugPKiPii
-.visible .entry _Z7r2c_bugPKiPii(
-	.param .u64 _Z7r2c_bugPKiPii_param_0,
-	.param .u64 _Z7r2c_bugPKiPii_param_1,
-	.param .u32 _Z7r2c_bugPKiPii_param_2
+	// .globl	_Z7r2c_bugPK4int2Pii
+.visible .entry _Z7r2c_bugPK4int2Pii(
+	.param .u64 _Z7r2c_bugPK4int2Pii_param_0,
+	.param .u64 _Z7r2c_bugPK4int2Pii_param_1,
+	.param .u32 _Z7r2c_bugPK4int2Pii_param_2
 )
 {
 	.reg .pred 	%p<10>;
-	.reg .b32 	%r<55>;
-	.reg .b64 	%rd<13>;
+	.reg .b32 	%r<61>;
+	.reg .b64 	%rd<11>;
 
 
-	ld.param.u64 	%rd1, [_Z7r2c_bugPKiPii_param_0];
-	ld.param.u64 	%rd2, [_Z7r2c_bugPKiPii_param_1];
+	ld.param.u64 	%rd1, [_Z7r2c_bugPK4int2Pii_param_0];
+	ld.param.u64 	%rd2, [_Z7r2c_bugPK4int2Pii_param_1];
 	cvta.to.global.u64 	%rd3, %rd1;
 	mov.u32 	%r3, %tid.x;
-	and.b32  	%r4, %r3, -32;
+	and.b32  	%r4, %r3, 31;
 	mov.u32 	%r5, %ctaid.x;
 	mov.u32 	%r6, %ntid.x;
-	mul.lo.s32 	%r7, %r6, %r5;
-	add.s32 	%r8, %r7, %r4;
-	and.b32  	%r9, %r3, 31;
+	mad.lo.s32 	%r7, %r6, %r5, %r3;
+	sub.s32 	%r8, %r7, %r4;
 	mov.u32 	%r2, 1;
 	// inline asm
 	{ .reg .pred p; setp.ne.u32 p, %r2, 0; vote.ballot.b32 %r1, p; } 
 	// inline asm
-	shl.b32 	%r10, %r9, 1;
-	mad.lo.s32 	%r11, %r8, 6, %r10;
-	mul.wide.s32 	%rd4, %r11, 4;
+	mul.lo.s32 	%r9, %r8, 6;
+	shr.u32 	%r10, %r9, 31;
+	add.s32 	%r11, %r9, %r10;
+	shr.s32 	%r12, %r11, 1;
+	add.s32 	%r13, %r12, %r4;
+	mul.wide.s32 	%rd4, %r13, 8;
 	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.u32 	%r12, [%rd5];
-	add.s32 	%r13, %r11, 1;
-	mul.wide.s32 	%rd6, %r13, 4;
-	add.s64 	%rd7, %rd3, %rd6;
-	ld.global.u32 	%r14, [%rd7];
-	ld.global.u32 	%r15, [%rd7+252];
-	ld.global.u32 	%r16, [%rd7+256];
-	ld.global.u32 	%r17, [%rd7+508];
-	ld.global.u32 	%r18, [%rd7+512];
-	cvta.to.global.u64 	%rd8, %rd2;
-	mul.lo.s32 	%r19, %r9, 3;
-	add.s32 	%r20, %r19, 2;
-	add.s32 	%r21, %r19, 1;
-	mul.wide.u32 	%rd9, %r9, -1431655765;
-	shr.u64 	%rd10, %rd9, 33;
-	cvt.u32.u64	%r22, %rd10;
-	mul.lo.s32 	%r23, %r22, 3;
-	sub.s32 	%r24, %r9, %r23;
-	and.b32  	%r25, %r24, 1;
-	setp.eq.b32	%p1, %r25, 1;
-	not.pred 	%p2, %p1;
-	selp.b32	%r26, %r12, %r15, %p2;
-	selp.b32	%r27, %r14, %r16, %p2;
-	selp.b32	%r28, %r15, %r17, %p2;
-	selp.b32	%r29, %r16, %r18, %p2;
-	selp.b32	%r30, %r17, %r12, %p2;
-	selp.b32	%r31, %r18, %r14, %p2;
-	and.b32  	%r32, %r19, 31;
-	and.b32  	%r33, %r20, 31;
-	and.b32  	%r34, %r21, 31;
-	and.b32  	%r35, %r24, 2;
-	setp.eq.s32	%p3, %r35, 0;
-	selp.b32	%r36, %r26, %r30, %p3;
-	selp.b32	%r37, %r27, %r31, %p3;
-	selp.b32	%r38, %r28, %r26, %p3;
-	selp.b32	%r39, %r29, %r27, %p3;
-	selp.b32	%r40, %r30, %r28, %p3;
-	selp.b32	%r41, %r31, %r29, %p3;
-	mov.u32 	%r42, 31;
-	shfl.sync.idx.b32 	%r43|%p4, %r36, %r32, %r42, %r1;
-	shfl.sync.idx.b32 	%r44|%p5, %r37, %r32, %r42, %r1;
-	add.s32 	%r45, %r44, %r43;
-	shfl.sync.idx.b32 	%r46|%p6, %r38, %r33, %r42, %r1;
-	add.s32 	%r47, %r45, %r46;
-	shfl.sync.idx.b32 	%r48|%p7, %r39, %r33, %r42, %r1;
-	add.s32 	%r49, %r47, %r48;
-	shfl.sync.idx.b32 	%r50|%p8, %r40, %r34, %r42, %r1;
-	add.s32 	%r51, %r49, %r50;
-	shfl.sync.idx.b32 	%r52|%p9, %r41, %r34, %r42, %r1;
-	add.s32 	%r53, %r51, %r52;
-	add.s32 	%r54, %r7, %r3;
-	mul.wide.u32 	%rd11, %r54, 4;
-	add.s64 	%rd12, %rd8, %rd11;
-	st.global.u32 	[%rd12], %r53;
+	ld.global.v2.u32 	{%r14, %r15}, [%rd5];
+	ld.global.v2.u32 	{%r18, %r19}, [%rd5+256];
+	ld.global.v2.u32 	{%r22, %r23}, [%rd5+512];
+	cvta.to.global.u64 	%rd6, %rd2;
+	mul.lo.s32 	%r26, %r4, 3;
+	add.s32 	%r27, %r26, 2;
+	add.s32 	%r28, %r26, 1;
+	mul.wide.u32 	%rd7, %r4, -1431655765;
+	shr.u64 	%rd8, %rd7, 33;
+	cvt.u32.u64	%r29, %rd8;
+	mul.lo.s32 	%r30, %r29, 3;
+	sub.s32 	%r31, %r4, %r30;
+	and.b32  	%r32, %r31, 1;
+	setp.eq.b32	%p2, %r32, 0;
+	//setp.eq.b32	%p1, %r32, 1;
+	//not.pred 	%p2, %p1;
+	selp.b32	%r33, %r14, %r18, %p2;
+	selp.b32	%r34, %r15, %r19, %p2;
+	selp.b32	%r35, %r18, %r22, %p2;
+	selp.b32	%r36, %r19, %r23, %p2;
+	selp.b32	%r37, %r22, %r14, %p2;
+	selp.b32	%r38, %r23, %r15, %p2;
+	and.b32  	%r39, %r26, 31;
+	and.b32  	%r40, %r27, 31;
+	and.b32  	%r41, %r28, 31;
+	and.b32  	%r42, %r31, 2;
+	setp.eq.s32	%p3, %r42, 0;
+	selp.b32	%r43, %r33, %r37, %p3;
+	selp.b32	%r44, %r34, %r38, %p3;
+	selp.b32	%r45, %r35, %r33, %p3;
+	selp.b32	%r46, %r36, %r34, %p3;
+	selp.b32	%r47, %r37, %r35, %p3;
+	selp.b32	%r48, %r38, %r36, %p3;
+	mov.u32 	%r49, 31;
+	shfl.sync.idx.b32 	%r50|%p4, %r43, %r39, %r49, %r1;
+	shfl.sync.idx.b32 	%r51|%p5, %r44, %r39, %r49, %r1;
+	add.s32 	%r52, %r51, %r50;
+	shfl.sync.idx.b32 	%r53|%p6, %r45, %r40, %r49, %r1;
+	add.s32 	%r54, %r52, %r53;
+	shfl.sync.idx.b32 	%r55|%p7, %r46, %r40, %r49, %r1;
+	add.s32 	%r56, %r54, %r55;
+	shfl.sync.idx.b32 	%r57|%p8, %r47, %r41, %r49, %r1;
+	add.s32 	%r58, %r56, %r57;
+	shfl.sync.idx.b32 	%r59|%p9, %r48, %r41, %r49, %r1;
+	add.s32 	%r60, %r58, %r59;
+	mul.wide.u32 	%rd9, %r7, 4;
+	add.s64 	%rd10, %rd6, %rd9;
+	st.global.u32 	[%rd10], %r60;
 	ret;
 }
 
@@ -154,7 +150,7 @@
 	.reg .b32 	%r<207>;
 	.reg .b64 	%rd<23>;
 	// demoted variable
-	.shared .align 4 .b8 _Z7r2c_modPKiPii$__cuda_local_var_34679_33_non_const_x[6144];
+	.shared .align 4 .b8 _Z7r2c_modPKiPii$__cuda_local_var_34684_33_non_const_x[6144];
 
 	ld.param.u64 	%rd1, [_Z7r2c_modPKiPii_param_0];
 	ld.param.u64 	%rd2, [_Z7r2c_modPKiPii_param_1];
@@ -174,7 +170,7 @@
 	mul.wide.s32 	%rd4, %r10, 4;
 	add.s64 	%rd5, %rd3, %rd4;
 	ld.global.u32 	%r11, [%rd5];
-	mov.u32 	%r12, _Z7r2c_modPKiPii$__cuda_local_var_34679_33_non_const_x;
+	mov.u32 	%r12, _Z7r2c_modPKiPii$__cuda_local_var_34684_33_non_const_x;
 	mad.lo.s32 	%r13, %r3, 24, %r12;
 	st.shared.u32 	[%r13], %r11;
 	add.s32 	%r14, %r10, 32;
@@ -419,9 +415,9 @@
 	.reg .b32 	%r<137>;
 	.reg .b64 	%rd<41>;
 	// demoted variable
-	.shared .align 16 .b8 _Z7r2c_litPKiPii$__cuda_local_var_34710_62_non_const_x[6144];
+	.shared .align 16 .b8 _Z7r2c_litPKiPii$__cuda_local_var_34715_62_non_const_x[6144];
 	// demoted variable
-	.shared .align 4 .b8 _Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm[24];
+	.shared .align 4 .b8 _Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm[24];
 
 	ld.param.u64 	%rd1, [_Z7r2c_litPKiPii_param_0];
 	ld.param.u64 	%rd2, [_Z7r2c_litPKiPii_param_1];
@@ -433,19 +429,19 @@
 	mul.lo.s32 	%r7, %r6, %r5;
 	add.s32 	%r8, %r7, %r4;
 	and.b32  	%r9, %r3, 31;
-	mov.u32 	%r10, _Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm;
+	mov.u32 	%r10, _Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm;
 	mov.u64 	%rd4, 4;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm+4], %rd4;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm+4], %rd4;
 	mov.u64 	%rd5, 0;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm], %rd5;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm], %rd5;
 	mov.u64 	%rd6, 5;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm+12], %rd6;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm+12], %rd6;
 	mov.u64 	%rd7, 1;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm+8], %rd7;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm+8], %rd7;
 	mov.u64 	%rd8, 3;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm+20], %rd8;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm+20], %rd8;
 	mov.u64 	%rd9, 2;
-	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34711_33_non_const_perm+16], %rd9;
+	st.shared.u32 	[_Z7r2c_litPKiPii$__cuda_local_var_34716_33_non_const_perm+16], %rd9;
 	mov.u32 	%r2, 1;
 	// inline asm
 	{ .reg .pred p; setp.ne.u32 p, %r2, 0; vote.ballot.b32 %r1, p; } 
@@ -454,7 +450,7 @@
 	mul.wide.s32 	%rd10, %r11, 4;
 	add.s64 	%rd11, %rd3, %rd10;
 	ld.global.u32 	%r12, [%rd11];
-	mov.u32 	%r13, _Z7r2c_litPKiPii$__cuda_local_var_34710_62_non_const_x;
+	mov.u32 	%r13, _Z7r2c_litPKiPii$__cuda_local_var_34715_62_non_const_x;
 	mad.lo.s32 	%r14, %r3, 24, %r13;
 	st.shared.u32 	[%r14], %r12;
 	add.s32 	%r15, %r11, 32;
@@ -626,7 +622,7 @@
 	.reg .b32 	%r<137>;
 	.reg .b64 	%rd<35>;
 	// demoted variable
-	.shared .align 16 .b8 _Z11r2c_lit_regPKiPii$__cuda_local_var_34745_62_non_const_x[6144];
+	.shared .align 16 .b8 _Z11r2c_lit_regPKiPii$__cuda_local_var_34750_62_non_const_x[6144];
 
 	ld.param.u64 	%rd1, [_Z11r2c_lit_regPKiPii_param_0];
 	ld.param.u64 	%rd2, [_Z11r2c_lit_regPKiPii_param_1];
@@ -646,7 +642,7 @@
 	mul.wide.s32 	%rd4, %r10, 4;
 	add.s64 	%rd5, %rd3, %rd4;
 	ld.global.u32 	%r11, [%rd5];
-	mov.u32 	%r12, _Z11r2c_lit_regPKiPii$__cuda_local_var_34745_62_non_const_x;
+	mov.u32 	%r12, _Z11r2c_lit_regPKiPii$__cuda_local_var_34750_62_non_const_x;
 	mad.lo.s32 	%r13, %r3, 24, %r12;
 	st.shared.u32 	[%r13], %r11;
 	add.s32 	%r14, %r10, 32;
@@ -815,7 +811,7 @@
 	.param .u32 _Z18r2c_lit_reg_structPKiPii_param_2
 )
 {
-	.local .align 16 .b8 	__local_depot5[32];
+	.local .align 8 .b8 	__local_depot5[24];
 	.reg .b64 	%SP;
 	.reg .b64 	%SPL;
 	.reg .pred 	%p<7>;
@@ -1016,7 +1012,7 @@
 	.reg .b32 	%r<132>;
 	.reg .b64 	%rd<11>;
 	// demoted variable
-	.shared .align 16 .b8 _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34806_62_non_const_x[6144];
+	.shared .align 16 .b8 _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34811_62_non_const_x[6144];
 
 	ld.param.u64 	%rd1, [_Z20r2c_lit_reg_strengthPKiPii_param_0];
 	ld.param.u64 	%rd2, [_Z20r2c_lit_reg_strengthPKiPii_param_1];
@@ -1040,7 +1036,7 @@
 	mul.wide.s32 	%rd4, %r13, 4;
 	add.s64 	%rd5, %rd3, %rd4;
 	ld.global.u32 	%r15, [%rd5];
-	mov.u32 	%r16, _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34806_62_non_const_x;
+	mov.u32 	%r16, _Z20r2c_lit_reg_strengthPKiPii$__cuda_local_var_34811_62_non_const_x;
 	mad.lo.s32 	%r17, %r3, 24, %r16;
 	st.shared.u32 	[%r17], %r15;
 	add.s32 	%r18, %r13, 32;
@@ -1458,7 +1454,7 @@ BB7_24:
 	.reg .b32 	%r<124>;
 	.reg .b64 	%rd<48>;
 	// demoted variable
-	.shared .align 16 .b8 _Z13r2c_lit_constPKiPii$__cuda_local_var_34878_62_non_const_x[6144];
+	.shared .align 16 .b8 _Z13r2c_lit_constPKiPii$__cuda_local_var_34883_62_non_const_x[6144];
 
 	ld.param.u64 	%rd1, [_Z13r2c_lit_constPKiPii_param_0];
 	ld.param.u64 	%rd2, [_Z13r2c_lit_constPKiPii_param_1];
@@ -1478,7 +1474,7 @@ BB7_24:
 	mul.wide.s32 	%rd4, %r10, 4;
 	add.s64 	%rd5, %rd3, %rd4;
 	ld.global.u32 	%r11, [%rd5];
-	mov.u32 	%r12, _Z13r2c_lit_constPKiPii$__cuda_local_var_34878_62_non_const_x;
+	mov.u32 	%r12, _Z13r2c_lit_constPKiPii$__cuda_local_var_34883_62_non_const_x;
 	mad.lo.s32 	%r13, %r3, 24, %r12;
 	st.shared.u32 	[%r13], %r11;
 	add.s32 	%r14, %r10, 32;
