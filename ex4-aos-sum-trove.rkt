@@ -195,32 +195,32 @@
    (define o (create-accumulator o (list +) identity blockDim))
    (define indices (make-vector struct-size))
    (reset-cost)
-   (define r0 (modulo (+ (+ (* localId a) 0) 2) warpSize))
+   (define r0 (modulo (+ (+ (* localId a) 0) 2) warpSize)) ;; 5j + 2
    (define r20
-     (modulo (+ (+ (* localId a) 0) (+ (* r0 -1) (quotient r0 1)) b) warpSize))
+     (modulo (+ (+ (* localId a) 0) (+ (* r0 -1) (quotient r0 1)) b) warpSize)) ;; 5j
    (define r21
      (modulo
       (+
        (+ (* localId -1) (quotient localId c))
        (+ (* r0 0) (quotient r0 1))
        0)
-      b))
+      b)) ;; 5j + 2
    (define r22
      (modulo
       (+
        (+ (* localId -1) (quotient localId 1))
        (+ (* r0 0) (quotient r0 1))
        2)
-      warpSize))
+      warpSize)) ;; 5j + 4
    (define r23
-     (modulo (+ (+ (* localId 0) 0) (+ (* r0 0) (quotient r0 1)) -1) warpSize))
+     (modulo (+ (+ (* localId 0) 0) (+ (* r0 0) (quotient r0 1)) -1) warpSize)) ;; 5j + 1
    (define r24
      (modulo
       (+
        (+ (* localId -1) (quotient localId c))
        (+ (* r0 0) (quotient r0 1))
        1)
-      warpSize))
+      warpSize)) ;; 5j + 3
    (define r28
      (modulo (+ (+ (* localId c) (quotient localId c)) 0) struct-size))
    (define p1 (= (modulo r28 2) 0))
