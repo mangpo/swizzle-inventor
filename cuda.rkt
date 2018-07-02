@@ -38,7 +38,10 @@
                      [@bvadd bvadd] [@bvsub bvsub] [@bvand bvand] [@bvxor bvxor] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
          @int @bv @dup gen-uid for/bounded
          define-shared
-         global-to-shared shared-to-global global-to-warp-reg warp-reg-to-global global-to-reg reg-to-global
+         create-matrix-local
+         global-to-shared shared-to-global
+         global-to-local local-to-global
+         global-to-reg reg-to-global
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl
@@ -293,6 +296,9 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(define (create-matrix-local dims [init (lambda () 0)])
+  (create-matrix (append dims (list blockSize))))
+
 (define (global-to-shared I I-shared pattern offset sizes #:transpose [transpose #f])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
@@ -412,14 +418,14 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 8)))
+    (f 0 6)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
 ;; stride-x = how many elements belong to a thread in one round.
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
 (define-syntax-rule 
-  (global-to-warp-reg I I-reg pattern offset sizes transpose)
+  (global-to-local I I-reg pattern offset sizes transpose)
   (begin
     (global-cost pattern sizes)
   (cond
@@ -429,11 +435,13 @@
             [blockSize (apply * blockDim)]
             [iter-x (add1 (quotient (sub1 size-x) (* warpSize stride-x)))]
             [I-len (vector-length I)]
-            [I-reg-len (vector-length I-reg)]
+            [I-reg-len (vector-length (vector-ref I-reg 0))])
+       #|
             [new-I-reg (make-vector blockSize #f)])
        (for ([t blockSize])
          (set new-I-reg t (clone I-reg)))
        (set! I-reg new-I-reg)
+|#
        ;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
        (for ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
@@ -461,7 +469,7 @@
     )))
 
 (define-syntax-rule 
-  (warp-reg-to-global I-reg I pattern offset sizes transpose)
+  (local-to-global I-reg I pattern offset sizes transpose)
   (begin
     (if transpose
         (global-cost (reverse pattern) (reverse sizes))
@@ -571,9 +579,9 @@
 
 (define-syntax create-accumulator
   (syntax-rules ()
-    ((create-accumulator o op-list final-op)
+    ((create-accumulator op-list final-op)
      (accumulator (list) op-list final-op #f))
-    ((create-accumulator o op-list final-op blockDim)
+    ((create-accumulator op-list final-op blockDim)
      (build-vector (apply * blockDim)
                    (lambda (i) (accumulator (list) op-list final-op (apply * blockDim)))))))
 

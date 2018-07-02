@@ -54,13 +54,13 @@
 
 (define (mult-spec A B C D sizes)
   (for ([index (get-x sizes)])
-    (let ([c (create-accumulator o (list bvand bvxor) identity)])
+    (let ([c (create-accumulator (list bvand bvxor) identity)])
       (for ([i (add1 index)])
         (let ([a (get A i)]
               [b (get B (- index i))])
           (accumulate c (list a b))))
       (set C index c))
-    (let ([d (create-accumulator o (list bvand bvxor) identity)])
+    (let ([d (create-accumulator (list bvand bvxor) identity)])
       (for ([i (range (add1 index) (get-x sizes))])
         (let ([a (get A i)]
               [b (get B (- (+ index (get-x sizes)) (+ i 1)))])
@@ -72,22 +72,22 @@
   ;(define b-cached #f)
   ;(global-to-reg A a-cached threadId sizes)
   ;(global-to-reg B b-cached threadId sizes)
-  (define a-cached (create-matrix (x-y-z 1)))
-  (define b-cached (create-matrix (x-y-z 1)))
-  (global-to-warp-reg A a-cached
+  (define a-cached (create-matrix-local (x-y-z 1)))
+  (define b-cached (create-matrix-local (x-y-z 1)))
+  (global-to-local A a-cached
                         (x-y-z 1) ;; stride
                         (x-y-z (@dup 0))
                         (x-y-z warpSize)
                         #f)
-  (global-to-warp-reg B b-cached
+  (global-to-local B b-cached
                       (x-y-z 1) ;; stride
                       (x-y-z (@dup 0))
                       (x-y-z warpSize)
                       #f)
   
   (define tidx (get-x threadId))
-  (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
-  (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i (get-x sizes)])
     (let ([a (shfl (get a-cached (@dup 0)) i)]
@@ -113,34 +113,34 @@
   ;(define b-cached #f)
   ;(global-to-reg A a-cached threadId sizes)
   ;(global-to-reg B b-cached threadId sizes)
-  (define a-cached (create-matrix (x-y-z 1)))
-  (define b-cached (create-matrix (x-y-z 1)))
-  (global-to-warp-reg A a-cached
+  (define a-cached (create-matrix-local (x-y-z 1)))
+  (define b-cached (create-matrix-local (x-y-z 1)))
+  (global-to-local A a-cached
                         (x-y-z 1) ;; stride
                         (x-y-z (@dup 0))
                         (x-y-z warpSize)
                         #f)
-  (global-to-warp-reg B b-cached
+  (global-to-local B b-cached
                       (x-y-z 1) ;; stride
                       (x-y-z (@dup 0))
                       (x-y-z warpSize)
                       #f)
-  #;(global-to-warp-reg A a-cached
+  #;(global-to-local A a-cached
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                         #f)
-  #;(global-to-warp-reg B b-cached
+  #;(global-to-local B b-cached
                       (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                       #f)
   ;(define tidx (get-x threadId))
   (define tidx (get-idInWarp threadId))
-  (define acc1 (create-accumulator o (list bvand bvxor) identity blockDim))
-  (define acc2 (create-accumulator o (list bvand bvxor) identity blockDim))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
-  (for/bounded ([i (choose warpSize (??))])
+  (for ([i warpSize #;(choose warpSize (??))])
     (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-a (interpret-lane my-lane-a1 (vector tidx (@dup i)) (vector warpSize))]
@@ -152,7 +152,7 @@
           )
       (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
   
-  (for/bounded ([i (choose warpSize (??))])
+  (for ([i warpSize #;(choose warpSize (??))])
     (let* (;[lane-a (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-b (?lane tidx (@dup i) [warpSize] 2)]
            ;[lane-a (interpret-lane my-lane-a2 (vector tidx (@dup i)) (vector warpSize))]
@@ -168,23 +168,63 @@
   (reg-to-global acc2 D threadId)
   )
 
+(define (mult-sketch-clean threadId blockID blockDim A B C D sizes)
+  (define warpId (get-warpId threadId))
+  (define a-cached (create-matrix-local (x-y-z 1)))
+  (define b-cached (create-matrix-local (x-y-z 1)))
+  (global-to-local A a-cached
+                        (x-y-z 1) ;; stride
+                        (x-y-z (@dup 0))
+                        (x-y-z warpSize)
+                        #f)
+  (global-to-local B b-cached
+                      (x-y-z 1) ;; stride
+                      (x-y-z (@dup 0))
+                      (x-y-z warpSize)
+                      #f)
+  
+  (define tidx (get-idInWarp threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i warpSize #;(choose warpSize (??))])
+    (let* ([lane-a (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [lane-b (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [a (shfl (get a-cached (@dup 0)) lane-a)]
+           [b (shfl (get b-cached (@dup 0)) lane-b)]
+          )
+      (accumulate acc1 (list a b) #:pred (?cond tidx (@dup i)))))
+  
+  (for ([i warpSize #;(choose warpSize (??))])
+    (let* ([lane-a (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [lane-b (?lane-mod2 (@dup i) tidx [warpSize] 0)]
+           [a (shfl (get a-cached (@dup 0)) lane-a)]
+           [b (shfl (get b-cached (@dup 0)) lane-b)]
+          )
+      (accumulate acc2 (list a b) #:pred (?cond tidx (@dup i)))))
+
+  (reg-to-global acc1 C threadId)
+  (reg-to-global acc2 D threadId)
+  )
+
 (define (test)
   (for ([w (list 4 5 32)])
     (let ([ret (run-with-warp-size mult-spec mult w)])
       (pretty-display `(test ,w ,ret))))
   )
-;(test)
+(test)
 
 ;; warp size 4, concrete load: 2 s
 ;; warp size 4 & 5, concrete load: 7 s
-;; warp size 4 & 5, synth load: 5/9 s
+;; warp size 4 & 5, synth load: 5/9, 3/30, 3/30 s
+;; warp size 32: > 2 hrs
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
     (time (solve
            (assert (andmap
                     (lambda (w) (run-with-warp-size mult-spec mult-sketch w))
-                    (list 4))))))
+                    (list 4 5))))))
   (print-forms sol)
   )
 (synthesis)
@@ -226,14 +266,14 @@
   (define (mult-load threadId blockId blockDim A B C-warp-spec D-warp-spec)
     (define warpId (get-warpId threadId))
     ;; sketch starts
-    (define A-cached (create-matrix (x-y-z a-regs)))
-    (define B-cached (create-matrix (x-y-z b-regs)))
-    (global-to-warp-reg A A-cached
+    (define A-cached (create-matrix-local (x-y-z a-regs)))
+    (define B-cached (create-matrix-local (x-y-z b-regs)))
+    (global-to-local A A-cached
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size --> TODO: minimize load size
                         #f)
-    (global-to-warp-reg B B-cached
+    (global-to-local B B-cached
                         (x-y-z 1) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
