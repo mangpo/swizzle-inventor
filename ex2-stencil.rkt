@@ -48,11 +48,12 @@
   (spec I O O-sizes)
   (run-kernel kernel (x-y-z block-size) (x-y-z n-block) I O* I-sizes O-sizes)
   ;(acc-print O*)
-  (acc-equal? O O*))
+  (acc-equal? O O*)
+  )
 
 (define (conv1d-spec I O o-sizes)
   (for ([i (get-x o-sizes)])
-    (let ([o (create-accumulator o (list +) /3)])
+    (let ([o (create-accumulator (list +) /3)])
       (for ([j 3])
         (accumulate o (get I (+ i j))))
       (set O i o))))
@@ -61,17 +62,17 @@
   (vector
    (inst 0 (vector 1 2))))
 (define (conv1d threadId blockID blockDim I O I-sizes O-sizes)
-  (define I-cached (create-matrix (x-y-z 2)))
+  (define I-cached (create-matrix-local (x-y-z 2)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
-  (global-to-warp-reg I I-cached
+  (global-to-local I I-cached
                  (x-y-z 1)
                  (+ (* blockID blockDim) (* warpID warpSize))
                  (x-y-z (+ warpSize 2)) #f)
 
   (define localId (get-idInWarp threadId))
-  (define o (create-accumulator o (list +) /3 blockDim))
+  (define o (create-accumulator (list +) /3 blockDim))
   (for ([i 3])
     (let* ([index (ite (< localId i) 1 0)]
            ;[lane (+ i localId)]
@@ -86,22 +87,22 @@
 
 ;(define my-lane (gen-lane? 1)) ;;(+ i localId)
 (define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
-  (define I-cached (create-matrix (x-y-z 2)))
+  (define I-cached (create-matrix-local (x-y-z 2)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
-  (global-to-warp-reg I I-cached
+  #;(global-to-local I I-cached
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size
                         #f)
-  #;(global-to-warp-reg I I-cached
+  (global-to-local I I-cached
                  (x-y-z 1)
                  (+ (* blockID blockDim) (* warpID warpSize))
                  (x-y-z (+ warpSize 2)) #f)
 
   (define localId (get-idInWarp threadId))
-  (define o (create-accumulator o (list +) /3 blockDim))
+  (define o (create-accumulator (list +) /3 blockDim))
 
   (for/bounded ([i (??)])
     (let* ([index (?index localId (@dup i) [warpSize] 1)] 
@@ -116,7 +117,7 @@
   )
 
 (define (test)
-  (for ([w (list 4 5)])
+  (for ([w (list 4 5 32)])
     (let ([ret (run-with-warp-size conv1d-spec conv1d w)])
       (pretty-display `(test ,w ,ret))))
   )
@@ -131,13 +132,15 @@
 ;; warp size 4 & 5, synth load, lane custom2: 11/15 s
 ;; warp size 4 & 5, synth load, lane depth2: 7/21 s
 ;; warp size 4 & 5, synth load, lane depth2 custom2: symbolic eval is very slow
+;; warp size 4 & 5, synth load, ?lane-mod2: 12/28 s
+;; warp size 32, ?lane-mod2: 62/66 s
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
     (time (solve
            (assert (andmap
                     (lambda (w) (run-with-warp-size conv1d-spec conv1d-sketch w))
-                    (list 4))))))
+                    (list 32))))))
   (print-forms sol)
   ;(print-lane 'lane (evaluate my-lane sol) '#(localId i) '#())
   )
@@ -172,8 +175,8 @@
   (define (conv1d-load threadId blockId blockDim I warp-input-spec)
     (define warpId (get-warpId threadId))
     ;; sketch starts
-    (define I-cached (create-matrix (x-y-z n-regs)))
-    (global-to-warp-reg I I-cached
+    (define I-cached (create-matrix-local (x-y-z n-regs)))
+    (global-to-local I I-cached
                         (x-y-z (??)) ;; stride
                         (x-y-z (?warp-offset [(get-x blockId) (get-x blockDim)] [warpId warpSize])) ;; offset
                         (x-y-z (?warp-size warpSize 1)) ;; load size

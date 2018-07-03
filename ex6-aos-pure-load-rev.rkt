@@ -58,27 +58,26 @@
   )
 
 (define (AOS-load-spec threadId blockID blockDim I O a b c)
-  (define I-cached (create-matrix (x-y-z struct-size)))
+  (define I-cached (create-matrix-local (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
-  (global-to-warp-reg I I-cached
+  (global-to-local I I-cached
                  (x-y-z 1)
                  offset (x-y-z (* warpSize struct-size)) #f)
-  (warp-reg-to-global I-cached O
+  (local-to-global I-cached O
                       (x-y-z struct-size) offset (x-y-z (* warpSize struct-size)) #f)
   )
 
 ;; cpu time: 372563 real time: 3828661
 (define (AOS-load-test3 threadId blockID blockDim I O a b c)
-   (define I-cached (create-matrix (x-y-z struct-size)))
-   (define O-cached
-     (for/vector ((i blockSize)) (create-matrix (x-y-z struct-size))))
+   (define I-cached (create-matrix-local (x-y-z struct-size)))
+   (define O-cached (create-matrix-local (x-y-z struct-size)))
    (define warpID (get-warpId threadId))
    (define offset
      (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
    (define gid (get-global-threadId threadId blockID))
-   (global-to-warp-reg
+   (global-to-local
     I
     I-cached
     (x-y-z 1)
@@ -107,7 +106,7 @@
               (* (+ localId (@dup i)) (@dup a)))
              struct-size)))
       (set O-cached index-o x)))
-   (warp-reg-to-global
+   (local-to-global
     O-cached
     O
     (x-y-z 1)
@@ -117,12 +116,12 @@
 
 ;; warpSize 32, depth 2/4/3, constraint col+row permute, distinct?: 
 (define (AOS-load-sketch threadId blockID blockDim I O a b c)
-  (define I-cached (create-matrix (x-y-z struct-size)))
-  (define O-cached (for/vector ([i blockSize]) (create-matrix (x-y-z struct-size))))
+  (define I-cached (create-matrix-local (x-y-z struct-size)))
+  (define O-cached (create-matrix-local (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
-  (global-to-warp-reg I I-cached
+  (global-to-local I I-cached
                  (x-y-z 1)
                  offset
                  (x-y-z (* warpSize struct-size)) #f)
@@ -150,7 +149,7 @@
       (unique-list l)
       (unique-list lo)))
   
-  (warp-reg-to-global O-cached O
+  (local-to-global O-cached O
                       (x-y-z 1)
                       offset
                       (x-y-z (* warpSize struct-size)) #f)
