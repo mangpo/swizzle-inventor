@@ -44,7 +44,7 @@
          global-to-reg reg-to-global
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
-         shfl
+         shfl shfl-send
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
 
@@ -418,7 +418,7 @@
                         body ...
                         (f (+ i 1) (- bound 1)))
                       (assert #f))))])
-    (f 0 6)))
+    (f 0 8)))
 
 ;; pattern = (x-y-z stride-x ...)
 ;; The pattern is round-robin in all deminsion.
@@ -528,6 +528,25 @@
       (for ([i warpSize])
         (let ([i-dest (+ offset i)]
               [i-src (+ offset (get lane-vec (+ offset i)))])
+        (set res i-dest (get val i-src))))))
+
+  (set! cost (+ cost 2))
+  res)
+
+(define (shfl-send val lane)
+  (define len (vector-length val))
+  (define res (make-vector len #f))
+  
+  (define lane-vec
+    (if (vector? lane)
+        (for/vector ([i (vector-length lane)]) (modulo (get lane i) warpSize))
+        (for/vector ([i len]) (modulo lane warpSize))))
+  
+  (for ([iter (quotient len warpSize)])
+    (let ([offset (* iter warpSize)])
+      (for ([i warpSize])
+        (let ([i-src (+ offset i)]
+              [i-dest (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
 
   (set! cost (+ cost 2))

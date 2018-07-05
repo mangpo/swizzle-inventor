@@ -28,7 +28,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 6)
+(define struct-size 8)
 (define n-block 2)
 
 (define (create-IO warpSize)
@@ -409,18 +409,18 @@
 ;; synthesize r27, r20,22,24, log m steps: 6/45 s
 ;; synthesize r27, r20--24, log m steps: 6/337 s
 ;; m = 4: 2/20
-;; m = 6: synthesize r27, r20,22,24+r0, log m steps:5/364 s
+;; m = 6: synthesize r27, r20,22,24+r0, log m steps:5/364 s | 10/171
 ;; m = 4: 1/8
-;; m = 5: 22/1778
-;; m = 7: 66/7043
-(define (AOS-sum-sketch6 threadId blockID blockDim I O I-sizes O-sizes a b c)
+;; m = 5: 22/1778 | 21/829
+;; m = 7: 66/7043 | 287/11,699 (exclude choose 0)
+(define (AOS-sum-sketch7 threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
   (define gid (get-global-threadId threadId blockID))
   (global-to-local I I-cached
-                        (x-y-z 2) ;; stride
+                        (x-y-z 1) ;; stride
                         (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
                         (x-y-z (* warpSize struct-size))
                         #f)
@@ -434,6 +434,10 @@
   (define r20 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
   (define r21 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
   (define r22 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r23 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r24 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r25 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
+  (define r26 (?lane-mod2 localId r0 [2 16 a b c struct-size warpSize] 0))
 
   (define r28 (?lane-mod1 localId [a b c struct-size warpSize] 0))
   (define p1 (= (modulo r28 2) 0))
@@ -460,16 +464,17 @@
     )
 
   (accumulate o (shfl (get idx2 (@dup 0)) r20) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 1)) r20) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 2)) r21) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 3)) r21) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 4)) r22) #:pred (@dup #t))
-  (accumulate o (shfl (get idx2 (@dup 5)) r22) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 1)) r21) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 2)) r22) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 3)) r23) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 4)) r24) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 5)) r25) #:pred (@dup #t))
+  (accumulate o (shfl (get idx2 (@dup 6)) r26) #:pred (@dup #t))
   (reg-to-global o O gid)
   )
 
 
-;; m = 8: 3/81 s
+;; m = 8: 3/81 s | 10/116, 7/100, 18/100 | (??) 30417 s
 (define (AOS-sum-sketch8 threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
@@ -535,12 +540,12 @@
     (let ([ret (run-with-warp-size AOS-sum-spec AOS-sum-test6 w)])
       (pretty-display `(test ,w ,ret ,(get-cost)))))
   )
-(test)
+;(test)
 
 (define (synthesis)
   (pretty-display "solving...")
   (assert
-   (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch6 w))
+   (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch8 w))
            (list 32)))
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
@@ -552,7 +557,7 @@
   ;(define sol2 (solve (assert (< cost this-cost))))
   ;(pretty-display `(cost2 ,(evaluate cost sol2)))
   )
-;(synthesis)
+(synthesis)
 
 (define (load-synth)
   (define-values (block-size I-sizes O-sizes I O O*)

@@ -216,15 +216,15 @@
 
 ;; warp size 4, concrete load: 2 s
 ;; warp size 4 & 5, concrete load: 7 s
-;; warp size 4 & 5, synth load: 5/9, 3/30, 3/30 s
-;; warp size 32: > 2 hrs
+;; warp size 4 & 5, synth load: 5/9 s
+;; warp size 32: 44/776 s
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
     (time (solve
            (assert (andmap
                     (lambda (w) (run-with-warp-size mult-spec mult-sketch w))
-                    (list 4 5))))))
+                    (list 32))))))
   (print-forms sol)
   )
 (synthesis)

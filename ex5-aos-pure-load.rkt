@@ -28,7 +28,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 4)
+(define struct-size 5)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -161,6 +161,7 @@
 ;; struct-size 2, warpSize 32, constraint col+row permute, distinct?: 2/9 s
 ;; struct-size 3, warpSize 32, constraint col+row permute, distinct?: 2/14 s
 ;; struct-size 4, warpSize 32, constraint col+row permute, distinct?: 4/42 s
+;; ^ if include choose 0 in lane-mod, > 5 mins
 ;; struct-size 5, warpSize 32, constraint col+row permute, distinct?: 4/39 s
 ;; struct-size 6, warpSize 32, constraint col+row permute, distinct?: unsat
 ;; struct-size 7, warpSize 32, constraint col+row permute, distinct?: 8/156 s
@@ -241,6 +242,53 @@
                       (x-y-z (* warpSize struct-size)) #f)
   )
 
+;; load/store with shuffle together
+;; shuf + shuf
+;; struct-size 4: 228/9542 s
+;; shuf + shuf-send
+;; struct-size 3: -
+;; struct-size 4: 507/12017 s
+;; struct-size 5: -
+(define (AOS-load-sketch2 threadId blockID blockDim I O a b c)
+  
+  (define I-cached (create-matrix-local (x-y-z struct-size)))
+  (define temp (create-matrix-local (x-y-z struct-size)))
+  (define O-cached (create-matrix-local (x-y-z struct-size)))
+  (define warpID (get-warpId threadId))
+  (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
+  (define gid (get-global-threadId threadId blockID))
+  (global-to-local I I-cached
+                 (x-y-z 1)
+                 ;;(x-y-z (?warp-offset [(get-x blockID) (get-x blockDim)] [warpID warpSize]))
+                 offset
+                 (x-y-z (* warpSize struct-size)) #f)
+
+  (define indices (make-vector struct-size))
+  (define indices-o (make-vector struct-size))
+  (define localId (get-idInWarp threadId))
+
+  (for ([i struct-size])
+    (let* ([lane1 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)] ;; depth 1 for struct-size=4
+           ;[lane1 (+ (* (quotient localId 4) 4) (modulo (- localId i) 4))]
+           [x (shfl (get I-cached (@dup i)) lane1)])
+      (set temp (@dup i) x) 
+      ))
+
+  (for ([i struct-size])
+    (let* ([index (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)]
+           ;[index (modulo (- localId i) 4)]
+           [lane2 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)]
+           ;[lane2 (modulo (+ (* 8 localId) (quotient localId 4) (* -8 i)) 32)]
+           [x (shfl-send (get temp index) lane2)])
+      (set O-cached (@dup i) x) 
+      ))
+  
+  (local-to-global O-cached O
+                      (x-y-z 1)
+                      offset
+                      (x-y-z (* warpSize struct-size)) #f)
+  )
+
 (define (test)
   (for ([w (list 32)])
     (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test w)])
@@ -250,7 +298,7 @@
 
 (define (synthesis)
   (pretty-display "solving...")
-  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
+  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch2 w))
                                            (list 32)))
   (define cost (get-cost))
   
