@@ -92,7 +92,7 @@
   ([(?const c ...)
     (choose 0 1 c ... -1 (- 0 c) ...)])
   )
-
+#|
 (define-synthax (?lane-mod1 x1 [c ...] depth)
   #:base (modulo (+ (+ (* x1 (?const- c ...)) (* (?const- c ...) (quotient x1 (?const c ...))))
                     (?const- c ...))
@@ -113,6 +113,31 @@
                     (+ (* x2 (?const- c ...)) (* (?const- c ...)(quotient x2 (?const c ...))))
                     (+ (* x3 (?const- c ...)) (* (?const- c ...)(quotient x3 (?const c ...))))
                     (?const- c ...))
+                 (?const c ...))
+  #:else (+ (?lane-mod3 x1 x2 x3 [c ...] 0)
+            (?lane-mod3 x1 x2 x3 [c ...] (- depth 1))))
+|#
+
+(define-synthax (?lane-mod1 x1 [c ...] depth)
+  #:base (modulo (+ (+ (* x1 (?const c ...)) (quotient x1 (?const c ...)))
+                    (?const c ...))
+                 (?const c ...))
+  #:else (+ (?lane-mod1 x1 [c ...] 0)
+            (?lane-mod1 x1 [c ...] (- depth 1))))
+
+(define-synthax (?lane-mod2 x1 x2 [c ...] depth)
+  #:base (modulo (+ (+ (* x1 (?const c ...)) (quotient x1 (?const c ...)))
+                    (+ (* x2 (?const c ...)) (quotient x2 (?const c ...)))
+                    (?const c ...))
+                 (?const c ...))
+  #:else (+ (?lane-mod2 x1 x2 [c ...] 0)
+            (?lane-mod2 x1 x2 [c ...] (- depth 1))))
+
+(define-synthax (?lane-mod3 x1 x2 x3 [c ...] depth)
+  #:base (modulo (+ (+ (* x1 (?const c ...)) (quotient x1 (?const c ...)))
+                    (+ (* x2 (?const c ...)) (quotient x2 (?const c ...)))
+                    (+ (* x3 (?const c ...)) (quotient x3 (?const c ...)))
+                    (?const c ...))
                  (?const c ...))
   #:else (+ (?lane-mod3 x1 x2 x3 [c ...] 0)
             (?lane-mod3 x1 x2 x3 [c ...] (- depth 1))))

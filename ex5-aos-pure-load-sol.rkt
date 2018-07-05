@@ -26,8 +26,8 @@
   (run-kernel spec (x-y-z block-size) (x-y-z n-block) I O a b c)
   (run-kernel kernel (x-y-z block-size) (x-y-z n-block) I O* a b c)
   (define ret (equal? O O*))
-  ;(pretty-display `(O ,O))
-  (pretty-display `(O* ,O*))
+  (pretty-display `(O ,(print-vec O)))
+  (pretty-display `(O* ,(print-vec O*)))
   ret)
 
 (define (AOS-load-spec threadId blockID blockDim I O a b c)
@@ -222,6 +222,77 @@
     (x-y-z (* warpSize struct-size))
     #f))
 
+(define (AOS-load5 threadId blockID blockDim I O a b c)
+   (define I-cached (create-matrix-local (x-y-z struct-size)))
+   (define O-cached (create-matrix-local (x-y-z struct-size)))
+   (define warpID (get-warpId threadId))
+   (define offset
+     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+   (define gid (get-global-threadId threadId blockID))
+   (global-to-local
+    I
+    I-cached
+    (x-y-z 1)
+    offset
+    (x-y-z (* warpSize struct-size))
+    #f)
+   (define indices (make-vector struct-size))
+   (define indices-o (make-vector struct-size))
+   (define localId (get-idInWarp threadId))
+   (for
+    ((i struct-size))
+    (let* ((index
+            (modulo
+             (+
+              (+ (* (@dup i) -1) (quotient (@dup i) -1))
+              (+ (* localId c) (quotient localId 1))
+              0)
+             a)) ;; (2j - 2i) % 5
+           (lane
+            (+
+             (modulo
+              (+
+               (+ (* (@dup i) 0) (quotient (@dup i) 1))
+               (+ (* localId a) (quotient localId warpSize))
+               0)
+              b) 
+             (modulo
+              (+
+               (+ (* (@dup i) -1) (quotient (@dup i) 1))
+               (+ (* localId -1) (quotient localId 1))
+               0)
+              c))) ;; (i + 5j) % 32
+           (x (shfl (get I-cached index) lane))
+           (index-o
+            (modulo
+             (+
+              (+ (* (@dup i) 0) (quotient (@dup i) c))
+              (+ (* localId -1) (quotient localId c))
+              warpSize) ;; i % 5
+             warpSize)))
+      (unique-warp (modulo lane warpSize))
+      (pretty-display `(i ,i))
+      (vector-set! indices i index)
+      (vector-set! indices-o i index-o)
+      (set O-cached index-o x)))
+   (for
+    ((t blockSize))
+    (let ((l
+           (for/list ((i struct-size)) (vector-ref (vector-ref indices i) t)))
+          (lo
+           (for/list
+            ((i struct-size))
+            (vector-ref (vector-ref indices-o i) t))))
+      (unique-list l)
+      (unique-list lo)))
+   (local-to-global
+    O-cached
+    O
+    (x-y-z 1)
+    offset
+    (x-y-z (* warpSize struct-size))
+    #f))
+
 (define (AOS-loadsh5-mp threadId blockID blockDim I O a b c)
    (define I-cached (create-matrix-local (x-y-z struct-size)))
    (define temp (create-matrix-local (x-y-z struct-size)))
@@ -265,7 +336,7 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-loadsh5-mp w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-load5 w)])
       (pretty-display `(test ,w ,ret))))
   )
 (test)

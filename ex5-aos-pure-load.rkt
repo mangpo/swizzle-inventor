@@ -277,7 +277,7 @@
   (for ([i struct-size])
     (let* ([index (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)]
            ;[index (modulo (- localId i) 4)]
-           [lane2 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)]
+           [lane2 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 1)]
            ;[lane2 (modulo (+ (* 8 localId) (quotient localId 4) (* -8 i)) 32)]
            [x (shfl-send (get temp index) lane2)])
       (set O-cached (@dup i) x) 
@@ -298,7 +298,7 @@
 
 (define (synthesis)
   (pretty-display "solving...")
-  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch2 w))
+  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
                                            (list 32)))
   (define cost (get-cost))
   
