@@ -29,7 +29,7 @@
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
 (provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3
-         ?cond ?ite ?const
+         ?cond ?ite ?const ?const32
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
@@ -92,6 +92,12 @@
   ([(?const c ...)
     (choose 0 1 c ... -1 (- 0 c) ...)])
   )
+
+(define-synthax ?const32
+  ([(?const32)
+    (choose 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32)])
+  )
+
 #|
 (define-synthax (?lane-mod1 x1 [c ...] depth)
   #:base (modulo (+ (+ (* x1 (?const- c ...)) (* (?const- c ...) (quotient x1 (?const c ...))))

@@ -44,7 +44,7 @@
          global-to-reg reg-to-global
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
-         shfl shfl-send
+         shfl shfl-send fan fan-prime rotate-nogroup
          accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
 
@@ -66,7 +66,6 @@
 (define (gen-uid)
   (set! uid (add1 uid))
   uid)
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; lifted operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -158,6 +157,47 @@
         (@extract (vector-ref x i) b))
       (let ([s (bvsub (bv BW (bitvector BW)) b)])
         (bvlshr (bvshl x s) s))))
+
+(define (gcd/bound x y [depth 8])
+  (assert (> depth 0))
+  (if (= y 0)
+      x
+      (gcd/bound y (modulo x y) (sub1 depth))))
+
+;; old (fan n c0 c1 c2 c3 j i c11)
+;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
+(define (fan j n cj dj group conflict
+             k m ck dk [offset 0])
+  (assert (and (>= group 2) (<= group n)))
+  (assert (and (>= cj 0) (< cj group)))
+  (assert (and (>= ck 0) (< ck group)))
+  (assert (and (>= offset 0) (< ck group)))
+  
+  (define rem (modulo n group))
+  (assert (= rem 0))
+  
+  (assert (and (>= dj 1) (<= dj group)))
+  (assert (= (modulo group dj) 0))
+  (assert (= (modulo cj (quotient group dj)) 0))
+  
+  (assert (= (modulo m dk) 0))
+  
+  (@+ (@* (@quotient j group) group) ;; group 
+      (@modulo (@+ (@* j cj) ;; fan-out
+                   (@* (@quotient (@modulo j group) dj) (@ite (@= 0 (@modulo k 2)) 1 conflict)) ;; fan-out: skip collision 
+                   (@* k ck) (@quotient k dk) offset) ;; offset
+               group))
+  )
+
+(define-syntax-rule (fan-prime j n cj
+                               k m ck dk)
+  (fan j n cj n n 1
+       k m ck dk))
+
+(define-syntax-rule (rotate-nogroup j n 
+                                    k m ck dk)
+  (fan j n 1 n n 1
+       k m ck dk))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; performance cost ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
