@@ -1,3 +1,15 @@
 *~
 *.o
 *#
+*.out
+*.sass
+*.lib
+*.ptx
+*.ii
+*.stub.c
+*.fatbin
+*.fatbin.c
+*.module_id
+*.cubin
+*.reg.c
+*.gpu
