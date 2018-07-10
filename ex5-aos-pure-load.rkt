@@ -28,8 +28,10 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 2)
+(define struct-size 4)
 (define n-block 1)
+
+
 
 (define (create-IO warpSize)
   (set-warpSize warpSize)
@@ -246,6 +248,13 @@
 ;; struct-size 3, const ??, constraint col+row permute, distinct?: 12 s
 ;; struct-size 5, const ??, constraint col+row permute, distinct?: 4/11 s
 ;; struct-size 7, const ??, constraint col+row permute, distinct?: 5/19 s
+
+;; newest fan sketch
+;; 2: 1/10 | 2/16
+;; 3: 3/17 | 63/191
+;; 4:      | 33/49
+;; 5:      | 16/129
+
 (define (AOS-load-sketch-fan threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix-local (x-y-z struct-size)))
   (define O-cached (create-matrix-local (x-y-z struct-size)))
@@ -262,11 +271,17 @@
   (define localId (get-idInWarp threadId))
   (for ([i struct-size])
     (let* (;(index (fan struct-size struct-size 2 5 0 i localId struct-size))
-           [index (fan struct-size (??) (??) (??) 0 i localId (??) (??) warpSize (choose 1 -1))]
+           ;[index (fan struct-size (??) (??) (??) 0 i localId (??) (??) warpSize (choose 1 -1))]
+           [index (fan i struct-size (??) (??) (??) (choose 1 -1)
+                       localId warpSize (??) (??))]
            ;(lane (fan 32 32 struct-size 1 0 localId i 32))
-           [lane (fan warpSize (??) (??) (??) 0 localId i (??) (??) struct-size (choose 1 -1))]
+           ;[lane (fan warpSize (??) (??) (??) 0 localId i (??) (??) struct-size (choose 1 -1))]
+           [lane (fan localId warpSize (??) (??) (??) (choose 1 -1)
+                      i struct-size (??) (??))]
            [x (shfl (get I-cached index) lane)]
-           [index-o (fan struct-size (??) (??) (??) 0 i localId (??) (??) warpSize (choose 1 -1))]
+           ;[index-o (fan struct-size (??) (??) (??) 0 i localId (??) (??) warpSize (choose 1 -1))]
+           [index-o (fan i struct-size (??) (??) (??) (choose 1 -1)
+                         localId warpSize (??) (??))]
            ;(index-o (fan struct-size struct-size 1 0 0 i localId struct-size))
            )
       (unique-warp (modulo lane warpSize))
@@ -297,6 +312,15 @@
 ;; struct-size 4, const ??: 25/176
 ;; struct-size 5, const ??: 21/60
 ;; struct-size 7, const ??: 19/97
+
+
+;; newest fan
+;; 2: 6/175
+;; 3: 77/19530
+;; 4: 13/391
+;; 5: 62/597
+;; with 1 for conf-fw
+;; 3: 12/236
 (define (AOS-loadsh-sketch-fan threadId blockID blockDim I O a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
@@ -315,20 +339,23 @@
   (define localId (get-idInWarp threadId))
 
   (for ([i struct-size])
-    (let* (;[lane1 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)] ;; depth 1 for struct-size=4
-           ;[lane1 (+ (* (quotient localId 4) 4) (modulo (- localId i) 4))]
-           [lane1 (fan warpSize (??) (??) (??) 0 localId i (??))]
+    (let* (#;[lane1 (fan localId warpSize 1 warpSize warpSize 1
+                       i struct-size 0 struct-size)]
+           [lane1 (fan localId warpSize (??) (??) (??) (choose 1 -1)
+                       i struct-size (??) (??))]
            [x (shfl (get I-cached (@dup i)) lane1)])
       (set temp (@dup i) x) 
       ))
 
   (for ([i struct-size])
-    (let* ([index (fan struct-size (??) (??) (??) 0 i localId (??))]
-           ;[index (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 0)]
-           ;[index (modulo (- localId i) 4)]
-           [lane2 (fan warpSize (??) (??) (??) 0 localId i (??))]
-           ;[lane2 (?lane-mod2 (@dup i) localId [2 16 a b c struct-size warpSize] 1)]
-           ;[lane2 (modulo (+ (* 8 localId) (quotient localId 4) (* -8 i)) 32)]
+    (let* (#;(index (fan i 5 3 5 5 1
+                       localId warpSize 2 warpSize))
+           [index (fan i struct-size (??) (??) (??) (choose 1 -1)
+                       localId warpSize (??) (??))]
+           #;(lane2 (fan localId 32 13 32 32 1
+                       i 5 19 5))
+           [lane2 (fan localId warpSize (??) (??) (??) (choose 1 -1)
+                       i struct-size (??) (??))]
            [x (shfl-send (get temp index) lane2)])
       (set O-cached (@dup i) x) 
       ))
@@ -348,7 +375,7 @@
 
 (define (synthesis)
   (pretty-display "solving...")
-  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch-fan w))
+  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-loadsh-sketch-fan w))
                                            (list 32)))
   (define cost (get-cost))
   

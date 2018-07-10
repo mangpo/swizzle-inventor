@@ -166,27 +166,42 @@
 
 ;; old (fan n c0 c1 c2 c3 j i c11)
 ;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
-(define (fan j n cj dj group conflict
+(define (fan j n cj dj group conf-fw 
              k m ck dk [offset 0])
   (assert (and (>= group 2) (<= group n)))
-  (assert (and (>= cj 0) (< cj group)))
-  (assert (and (>= ck 0) (< ck group)))
+  (assert (and (> cj -1) (< cj group)))
+  (assert (and (> ck -1) (< ck group)))
   (assert (and (>= offset 0) (< ck group)))
   
   (define rem (modulo n group))
   (assert (= rem 0))
-  
-  (assert (and (>= dj 1) (<= dj group)))
+
+  ;; dj should be group/gcd(group, cj)
+  ;; gcd = group/dj
+  ;(assert (and (>= dj 1) (<= dj group)))
   (assert (= (modulo group dj) 0))
   (assert (= (modulo cj (quotient group dj)) 0))
   
   (assert (= (modulo m dk) 0))
+  (define common (quotient group dj))
+
+  (define offset1 (@+ (@quotient (@modulo j group) dj)
+                      (@* k ck) (@quotient k dk) offset))
+  (define offset2
+    (if (= conf-fw 1)
+        offset1
+        (@modulo offset1 common)))
   
   (@+ (@* (@quotient j group) group) ;; group 
       (@modulo (@+ (@* j cj) ;; fan-out
-                   (@* (@quotient (@modulo j group) dj) (@ite (@= 0 (@modulo k 2)) 1 conflict)) ;; fan-out: skip collision 
-                   (@* k ck) (@quotient k dk) offset) ;; offset
+                   offset2)
                group))
+
+    #;(@+ (@* (@quotient j group) group) ;; group 
+          (@modulo (@+ (@* j cj) ;; fan-out
+                       (@quotient (@modulo j group) dj) ;; fan-out: skip collision 
+                       (@* k ck) (@quotient k dk) offset) ;; offset
+                   group))
   )
 
 (define-syntax-rule (fan-prime j n cj
@@ -218,6 +233,8 @@
 (define (zero-bv? x) (= x (bv 0 BW)))
 (define (one-bv? x) (= x (bv 1 BW)))
 (define (minus-one-bv? x) (= x (bv -1 BW)))
+(define (true? x) (and (boolean? x) x))
+(define (false? x) (and (boolean? x) (not x)))
 
 (define (all? x f)
   (cond
@@ -292,6 +309,14 @@
        (cond
          [(all? (second args) zero-bv?) 0]
          [else op-cost])]
+
+      [(member op (list @= @< @<= @> @>=))
+       ;(pretty-display `(@modulo ,ret))
+       (cond
+         [(all? ret false?) 0]
+         [(all? ret true?) 0]
+         [else op-cost])]
+      
       [else op-cost]
       ))
   (set! cost (+ cost inc))
@@ -682,8 +707,9 @@
              [add (get addition i)])
          (when p
            (set-accumulator-val! acc (cons add (accumulator-val acc))))))
-     
-     (accumulate-cost (reverse (accumulator-oplist (vector-ref x 0))) addition) 
+
+     (unless (all? pred-vec false?)
+       (accumulate-cost (reverse (accumulator-oplist (vector-ref x 0))) addition))
      ]
 
     [pred

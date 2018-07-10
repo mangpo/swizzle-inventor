@@ -28,7 +28,7 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan
          ?cond ?ite ?const ?const32
          ?warp-size ?warp-offset
          print-forms choose
@@ -37,7 +37,7 @@
 
 (define-synthax ?cond
   ([(?cond x ...)
-    (choose (@dup #t)
+    (choose (@dup #t) (@dup #f)
             ((choose < <= > >= =) (choose x ...) (choose x ...)))])
   )
    
@@ -76,6 +76,25 @@
          ((choose + -)
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
+
+(define-synthax ?fan
+  ([(?fan eid n k m)
+    (fan eid n (??) (??) (??) (choose 1 -1)
+         k m (??) (??))]
+
+   [(?fan eid n k m #:fw conf-fw)
+    (fan eid n (??) (??) (??) conf-fw
+         k m (??) (??))]
+
+   [(?fan eid n k m [c ...])
+    (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
+         k m (?const c ...) (?const m c ...))]
+
+   [(?fan eid n k m [c ...] #:fw conf-fw)
+    (fan eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
+         k m (?const c ...) (?const m c ...))]
+   )
+  )
 
 (define-synthax ?index
   ([(?index x ... [c ...] depth)

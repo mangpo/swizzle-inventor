@@ -1,29 +1,3 @@
-#|
- | Copyright (c) 2018-2019, University of California, Berkeley.
- |
- | Redistribution and use in source and binary forms, with or without 
- | modification, are permitted provided that the following conditions are met:
- |
- | 1. Redistributions of source code must retain the above copyright notice, 
- | this list of conditions and the following disclaimer.
- |
- | 2. Redistributions in binary form must reproduce the above copyright notice, 
- | this list of conditions and the following disclaimer in the documentation 
- | and/or other materials provided with the distribution.
- |
- | THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
- | AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
- | IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
- | ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE 
- | LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
- | CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
- | SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
- | INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN 
- | CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) 
- | ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE 
- | POSSIBILITY OF SUCH DAMAGE.
- |#
-
 #lang rosette
 
 (require rosette/lib/synthax)
@@ -47,7 +21,10 @@
 
   (spec A B C sizes)
   (run-kernel kernel (x-y-z block-size) (x-y-z n-block) A B C* sizes)
-  ;(acc-print O*)
+  ;(pretty-display ">>> C")
+  ;(acc-print C)
+  ;(pretty-display ">>> C*")
+  ;(acc-print C*)
   (acc-equal? C C*))
 
 (define (mult-spec A B C sizes)
@@ -207,9 +184,60 @@
   (reg-to-global acc2 C (+ sizes threadId))
   )
 
+(define (mult64 threadId blockID blockDim A B C sizes)
+  (define warpId (get-warpId threadId))
+  (define a-cached (create-matrix-local (x-y-z 2)))
+  (define b-cached (create-matrix-local (x-y-z 2)))
+  (global-to-local A a-cached
+                   (x-y-z 1) ;; stride
+                   (x-y-z (@dup 0))
+                   sizes
+                   #f)
+  (global-to-local B b-cached
+                   (x-y-z 1) ;; stride
+                   (x-y-z (@dup 0))
+                   sizes
+                   #f)
+  
+  (define tidx (get-idInWarp threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc3 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
-;; warpsize=4: 7/95 | 64/99, ?const: 10/95
-;; warpsize=4,5: 43/358
+  (for ([i warpSize #;(choose warpSize (??))])
+    (let* ([lane-a1 (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize)]
+           [lane-a2 (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize)]
+           [lane-b1 (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize (- warpSize 1) warpSize)]
+           [lane-b2 (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize (- warpSize 1) warpSize)]
+           [a1 (shfl (get a-cached (@dup 0)) lane-a1)]
+           [a2 (shfl (get a-cached (@dup 1)) lane-a2)]
+           [b1 (shfl (get b-cached (@dup 0)) lane-b1)]
+           [b2 (shfl (get b-cached (@dup 1)) lane-b2)]
+          )
+      (accumulate acc1 (list a1 b1) #:pred (<= i tidx))
+      
+      (accumulate acc2 (list a1 b1) #:pred (> i tidx))
+      (accumulate acc2 (list a1 b2) #:pred (<= i tidx))
+      (accumulate acc2 (list a2 b1) #:pred (<= i tidx))
+      
+      (accumulate acc3 (list a1 b2) #:pred (> i tidx))
+      (accumulate acc3 (list a2 b1) #:pred (> i tidx))
+      (accumulate acc3 (list a2 b2) #:pred (<= i tidx))
+      
+      (accumulate acc4 (list a2 b2) #:pred (> i tidx))
+      ))
+
+  (reg-to-global acc1 C threadId)
+  (reg-to-global acc2 C (+ warpSize threadId))
+  (reg-to-global acc3 C (+ (* 2 warpSize) threadId))
+  (reg-to-global acc4 C (+ (* 3 warpSize) threadId))
+  )
+
 (define (mult64-sketch threadId blockID blockDim A B C sizes)
   (define warpId (get-warpId threadId))
   (define a-cached (create-matrix-local (x-y-z 2)))
@@ -273,11 +301,13 @@
   )
 
 (define (test)
-  (for ([w (list 4 5 32)])
-    (let ([ret (run-with-warp-size mult-spec mult w)])
-      (pretty-display `(test ,w ,ret))))
+  (for ([n (list 8)])
+    (let ([ret (run-with-warp-size mult-spec mult64-sketch 4 n)])
+      (pretty-display `(test ,n ,ret))
+      (pretty-display `(cost ,(get-cost)))
+      ))
   )
-;(test)
+(test)
 
 ;; warp size 4, concrete load: 2 s
 ;; warp size 4 & 5, concrete load: 7 s
@@ -285,18 +315,14 @@
 ;; warp size 32: 44/776 s
 (define (synthesis)
   (pretty-display "solving...")
-  (assert (andmap
-           (lambda (w) (run-with-warp-size mult-spec mult64-sketch w (* 2 w)))
-           (list 32)))
-  
-  (define cost (get-cost))
-  (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
-
-  (define this-cost (evaluate cost sol))
+  (define sol
+    (time (solve
+           (assert (andmap
+                    (lambda (n) (run-with-warp-size mult-spec mult64-sketch 32 n))
+                    (list 64))))))
   (print-forms sol)
-  (pretty-display `(cost ,this-cost))
   )
-(synthesis)
+;(synthesis)
 
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)

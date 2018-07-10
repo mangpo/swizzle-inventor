@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 2)
+(define struct-size 5)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -322,10 +322,12 @@
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan 5 5 3 2 0 i localId))
+    (let* ((index (fan i 5 3 5 5 1
+                       localId warpSize 2 warpSize))
            #;(index
             (modulo (+ (* 3 i) (* localId 2)) 5))
-           (lane2 (fan 32 32 13 19 0 localId i))
+           (lane2 (fan localId 32 13 32 32 1
+                       i 5 19 5))
            #;(lane2
             (modulo
              (- (* 13 localId) (* 13 i))
@@ -507,13 +509,19 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((lane1 (fan warpSize 32 0 0 0 localId i 1))
+    (let* (;(lane1 (fan warpSize 32 0 0 0 localId i 1))
+           (lane1 (fan localId warpSize 1 warpSize warpSize 1
+                       i struct-size 0 struct-size))
            (x (shfl (get I-cached (@dup i)) lane1)))
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan struct-size struct-size 2 1 0 i localId 3))
-           (lane2 (fan warpSize 32 11 21 0 localId i 32))
+    (let* (;(index (fan struct-size struct-size 2 1 0 i localId 3))
+           (index (fan i struct-size 2 struct-size struct-size 1
+                       localId warpSize 1 warpSize))
+           ;(lane2 (fan warpSize 32 11 21 0 localId i 32))
+           (lane2 (fan localId warpSize 11 warpSize warpSize 1
+                       i struct-size 21 struct-size))
            (x (shfl-send (get temp index) lane2)))
       (set O-cached (@dup i) x)))
    (local-to-global
@@ -539,14 +547,11 @@
   (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
   (for ([i struct-size])
-    (let* (;[index (fan struct-size struct-size 1 1 0 i localId struct-size warpSize warpSize)]
-           [index (fan-prime i struct-size 1
+    (let* ([index (fan-prime i struct-size 1
                              localId warpSize 1 warpSize)]
-           ;[lane (fan warpSize warpSize 2 1 0 localId i 16 struct-size struct-size)]
            [lane (fan localId warpSize 2 16 warpSize -1
                       i struct-size 1 struct-size)]
            [x (shfl (get I-cached index) lane)]
-           ;[index-o (fan struct-size struct-size 1 0 0 i localId struct-size 16 warpSize)]
            [index-o (fan-prime i struct-size 1
                                localId warpSize 0 16)]
            )
@@ -588,13 +593,16 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((lane1 (fan warpSize 2 0 1 0 localId i 1))
-           (x (shfl (get I-cached (@dup i)) lane1)))
+    (let* ((lane1 (fan localId warpSize 0 1 2 1
+                       i struct-size 1 struct-size))
+           [x (shfl (get I-cached (@dup i)) lane1)])
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan struct-size 2 0 1 0 i localId 1))
-           (lane2 (fan warpSize 32 16 16 0 localId i 2))
+    (let* ((index (fan-prime i struct-size 1
+                             localId warpSize 1 warpSize))
+           (lane2 (fan localId warpSize 16 2 32 1
+                       i struct-size 16 struct-size))
            (x (shfl-send (get temp index) lane2)))
       (set O-cached (@dup i) x)))
    (local-to-global
@@ -607,7 +615,7 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-load2 w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-loadsh5 w)])
       (pretty-display `(test ,w ,ret))))
   )
 (test)
