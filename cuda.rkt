@@ -169,8 +169,8 @@
 (define (fan j n cj dj group conf-fw 
              k m ck dk [offset 0])
   (assert (and (>= group 2) (<= group n)))
-  (assert (and (> cj -1) (< cj group)))
-  (assert (and (> ck -1) (< ck group)))
+  (assert (and (>= cj -1) (< cj group)))
+  (assert (and (>= ck -1) (< ck group)))
   (assert (and (>= offset 0) (< ck group)))
   
   (define rem (modulo n group))
@@ -310,16 +310,19 @@
          [(all? (second args) zero-bv?) 0]
          [else op-cost])]
 
+      #|
       [(member op (list @= @< @<= @> @>=))
        ;(pretty-display `(@modulo ,ret))
        (cond
          [(all? ret false?) 0]
          [(all? ret true?) 0]
          [else op-cost])]
+|#
       
       [else op-cost]
       ))
-  (set! cost (+ cost inc))
+  ;(set! cost (+ cost inc))
+  (void)
   )
 
 
@@ -347,7 +350,8 @@
       [else
        (f (reverse ops) vals)]))
   ;(pretty-display `(accumulate-cost ,ops ,(size-of vals) ,inc))
-  (set! cost (+ cost inc))
+  ;(set! cost (+ cost inc))
+  (set! cost (+ cost 1))
   )
 
 (define (global-cost pattern sizes)
@@ -356,7 +360,8 @@
     (if (= pattern-x 1)
         (+ 1 (quotient (apply * sizes) blockSize))
         (* 4 (+ 1 (quotient (apply * sizes) blockSize)))))
-  (set! cost (+ cost my-cost))
+  ;(set! cost (+ cost my-cost))
+  (void)
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -372,6 +377,7 @@
      (let ([size-x (get-x sizes)]
            [bound-x (get-x bounds)]
            [offset-x (get-x offset)])
+       (when (vector? offset-x) (set! offset-x (vector-ref offset-x 0)))
        (for ([i size-x])
          (when (< (+ offset-x i) bound-x)
            (set I-shared i (get I (+ offset-x i))))))]
@@ -383,6 +389,10 @@
            [bound-y (get-y bounds)]
            [offset-x (get-x offset)]
            [offset-y (get-y offset)])
+       (when (vector? offset-x)
+         (set! offset-x (vector-ref offset-x 0))
+         (set! offset-y (vector-ref offset-y 0))
+         )
        (for* ([y size-y] [x size-x])
          (when (and (< (+ offset-x x) bound-x) (< (+ offset-y y) bound-y))
            (if transpose
@@ -399,6 +409,11 @@
            [offset-x (get-x offset)]
            [offset-y (get-y offset)]
            [offset-z (get-z offset)])
+       (when (vector? offset-x)
+         (set! offset-x (vector-ref offset-x 0))
+         (set! offset-y (vector-ref offset-y 0))
+         (set! offset-z (vector-ref offset-z 0))
+         )
        (for* ([z size-z] [y size-y] [x size-x])
          (when (and (< (+ offset-x x) bound-x) (< (+ offset-y y) bound-y) (< (+ offset-z z) bound-z))
            (if transpose
@@ -489,10 +504,8 @@
 ;; The pattern is round-robin in all deminsion.
 ;; stride-x = how many elements belong to a thread in one round.
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
-(define-syntax-rule 
-  (global-to-local I I-reg pattern offset sizes transpose)
-  (begin
-    (global-cost pattern sizes)
+(define (global-to-local I I-reg pattern offset sizes transpose #:warp-shape [warp-shape #f])
+  (global-cost pattern sizes)
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -501,13 +514,6 @@
             [iter-x (add1 (quotient (sub1 size-x) (* warpSize stride-x)))]
             [I-len (vector-length I)]
             [I-reg-len (vector-length (vector-ref I-reg 0))])
-       #|
-            [new-I-reg (make-vector blockSize #f)])
-       (for ([t blockSize])
-         (set new-I-reg t (clone I-reg)))
-       (set! I-reg new-I-reg)
-|#
-       ;(pretty-display `(iterate ,(quotient blockSize warpSize) ,iter-x ,stride-x))
        (for ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
                              (get-x (vector-ref offset (* warp warpSize)))
@@ -531,9 +537,57 @@
            )))
      ]
 
+    [(= (length blockDim) 2)
+     (let* ([size-x (get-x sizes)]
+            [size-y (get-y sizes)]
+            [stride-x (get-x pattern)]
+            [stride-y (get-y pattern)]
+            [warp-shape-x (get-x warp-shape)]
+            [warp-shape-y (get-y warp-shape)]
+            [blockSize (apply * blockDim)]
+            [iter-x (add1 (quotient (sub1 size-x) (* warp-shape-x stride-x)))]
+            [iter-y (add1 (quotient (sub1 size-y) (* warp-shape-y stride-y)))]
+            [I-len-x (vector-length (vector-ref I 0))]
+            [I-len-y (vector-length I)]
+            [I-reg-len-y (vector-length (vector-ref I-reg 0))]
+            [I-reg-len-x (vector-length (vector-ref (vector-ref I-reg 0) 0))])
+       (for ([warp (quotient blockSize warpSize)])
+         ;(pretty-display `(warp ,warp ,offset))
+         (let ([offset-x (if (vector? offset)
+                             (get-x (vector-ref offset (* warp warpSize)))
+                             (vector-ref (get-x offset) (* warp warpSize)))]
+               [offset-y (if (vector? offset)
+                             (get-y (vector-ref offset (* warp warpSize)))
+                             (vector-ref (get-y offset) (* warp warpSize)))])
+           ;(pretty-display `(offset-x ,offset-x))
+           (for/bounded ([it-y iter-y])
+           (for/bounded ([it-x iter-x])
+             (for ([t warpSize])
+               (for/bounded ([my-y stride-y])
+               (for/bounded ([my-x stride-x])
+                 ;(pretty-display `(loop ,warp ,it-x ,t ,my-x))
+                 (let ([global-y (+ offset-y
+                                    (* size-y warp) (* it-y warp-shape-y stride-y)
+                                    (* (quotient t warp-shape-x) stride-y) my-y)]
+                       [global-x (+ offset-x
+                                    (* size-x warp) (* it-x warp-shape-x stride-x)
+                                    (* (modulo t warp-shape-x) stride-x) my-x)]
+                       [local-y (+ my-y (* it-y stride-y))]
+                       [local-x (+ my-x (* it-x stride-x))]
+                       )
+                 (when (and (< global-y I-len-y) (< global-x I-len-x)
+                            (< local-x I-reg-len-x) (< local-y I-reg-len-y)
+                            )
+                   (set I-reg local-x local-y
+                        (+ t (* warp warpSize)) ;; thread in a block
+                        (get I global-x global-y
+                             )))))))))
+           )))
+     ]
+
     ;; TODO
     [else (raise "unimplemented")]
-    )))
+    ))
 
 (define-syntax-rule 
   (local-to-global I-reg I pattern offset sizes transpose)
@@ -595,7 +649,7 @@
               [i-src (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
 
-  (set! cost (+ cost 2))
+  ;(set! cost (+ cost 2))
   res)
 
 (define (shfl-send val lane)
@@ -614,7 +668,7 @@
               [i-dest (+ offset (get lane-vec (+ offset i)))])
         (set res i-dest (get val i-src))))))
 
-  (set! cost (+ cost 2))
+  ;(set! cost (+ cost 2))
   res)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -696,6 +750,8 @@
               l))))
 
   (cond
+    [(and (boolean? pred) (not pred)) (void)]
+    
     [(vector? x)
      (define veclen (accumulator-veclen (get x 0)))
      (define addition (f val-list (accumulator-oplist (get x 0)) veclen))
@@ -708,15 +764,17 @@
          (when p
            (set-accumulator-val! acc (cons add (accumulator-val acc))))))
 
-     (unless (all? pred-vec false?)
-       (accumulate-cost (reverse (accumulator-oplist (vector-ref x 0))) addition))
+     ;(unless (all? pred-vec false?)
+     ;  (accumulate-cost (reverse (accumulator-oplist (vector-ref x 0))) addition))
+     (set! cost (+ cost 1))
      ]
 
     [pred
      (define add (f val-list (accumulator-oplist x) #f))
      (set-accumulator-val! x (cons add (accumulator-val x)))
      
-     (accumulate-cost (reverse (accumulator-oplist x)) add) 
+     ;(accumulate-cost (reverse (accumulator-oplist x)) add)
+     (set! cost (+ cost 1)) 
      ])
 
   )

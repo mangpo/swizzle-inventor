@@ -37,7 +37,7 @@
 
 (define-synthax ?cond
   ([(?cond x ...)
-    (choose (@dup #t) (@dup #f)
+    (choose #t #f
             ((choose < <= > >= =) (choose x ...) (choose x ...)))])
   )
    
@@ -80,11 +80,11 @@
 (define-synthax ?fan
   ([(?fan eid n k m)
     (fan eid n (??) (??) (??) (choose 1 -1)
-         k m (??) (??))]
+         k m (??) (??) (??))]
 
    [(?fan eid n k m #:fw conf-fw)
     (fan eid n (??) (??) (??) conf-fw
-         k m (??) (??))]
+         k m (??) (??) (??))]
 
    [(?fan eid n k m [c ...])
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)

@@ -29,7 +29,7 @@
 ;(require (only-in rosette [vector-ref $vector-ref]))
 (provide (all-defined-out))
 
-(define BW 10)
+(define BW 8)
 (current-bitwidth BW)
 
 #;(define (vector-ref x index)

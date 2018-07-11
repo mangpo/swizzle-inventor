@@ -207,9 +207,12 @@
   (reg-to-global acc2 C (+ sizes threadId))
   )
 
-
+;; warpsize=32, bw=10: forever
 ;; warpsize=4: 7/95 | 64/99, ?const: 10/95
 ;; warpsize=4,5: 43/358
+
+;; bw = 8, cost = 32: 40/61
+;; bw = 8, offset = ??: 81/211
 (define (mult64-sketch threadId blockID blockDim A B C sizes)
   (define warpId (get-warpId threadId))
   (define a-cached (create-matrix-local (x-y-z 2)))
@@ -240,10 +243,18 @@
                           i warpSize #:fw 1)]
            [lane-b2 (?fan tidx warpSize
                           i warpSize #:fw 1)]
-           [a1 (shfl (get a-cached (@dup 0)) lane-a1)]
-           [a2 (shfl (get a-cached (@dup 1)) lane-a2)]
-           [b1 (shfl (get b-cached (@dup 0)) lane-b1)]
-           [b2 (shfl (get b-cached (@dup 1)) lane-b2)]
+           [index-a1 (?fan 0 2
+                           tidx warpSize)]
+           [index-a2 (?fan 1 2
+                           tidx warpSize)]
+           [index-b1 (?fan 0 2
+                           tidx warpSize)]
+           [index-b2 (?fan 1 2
+                           tidx warpSize)]
+           [a1 (shfl (get a-cached index-a1) lane-a1)]
+           [a2 (shfl (get a-cached index-a2) lane-a2)]
+           [b1 (shfl (get b-cached index-b1) lane-b1)]
+           [b2 (shfl (get b-cached index-b2) lane-b2)]
           )
       (accumulate acc1 (list a1 b1) #:pred (?cond tidx (@dup i)))
       (accumulate acc2 (list a1 b1) #:pred (?cond tidx (@dup i)))
@@ -272,10 +283,68 @@
   (reg-to-global acc4 C (+ (* 3 warpSize) threadId))
   )
 
+
+(define (mult64-test threadId blockID blockDim A B C sizes)
+   (define warpId (get-warpId threadId))
+   (define a-cached (create-matrix-local (x-y-z 2)))
+   (define b-cached (create-matrix-local (x-y-z 2)))
+   (global-to-local A a-cached (x-y-z 1) (x-y-z (@dup 0)) sizes #f)
+   (global-to-local B b-cached (x-y-z 1) (x-y-z (@dup 0)) sizes #f)
+   (define tidx (get-idInWarp threadId))
+   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+   (define acc3 (create-accumulator (list bvand bvxor) identity blockDim))
+   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
+   (for
+    ((i warpSize))
+    (let* ((lane-a1 (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize))
+           (lane-a2 (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize))
+           (lane-b1 (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize (- warpSize 1) warpSize))
+           (lane-b2 (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize (- warpSize 1) warpSize))
+           (index-a1 (@dup 0))
+           (index-a2 (@dup 1))
+           (index-b1 (@dup 0))
+           (index-b2 (@dup 1))
+           (a1 (shfl (get a-cached index-a1) lane-a1))
+           (a2 (shfl (get a-cached index-a2) lane-a2))
+           (b1 (shfl (get b-cached index-b1) lane-b1))
+           (b2 (shfl (get b-cached index-b2) lane-b2)))
+      (pretty-display `(cost-before ,i ,(get-cost)))
+      (accumulate acc1 (list a1 b1) #:pred (<= (@dup i) tidx))
+      (accumulate acc2 (list a1 b1) #:pred (< tidx (@dup i)))
+      (accumulate acc3 (list a1 b1) #:pred #f)
+      (accumulate acc4 (list a1 b1) #:pred #f)
+      
+      (accumulate acc1 (list a1 b2) #:pred #f)
+      (accumulate acc2 (list a1 b2) #:pred (>= tidx (@dup i)))
+      (accumulate acc3 (list a1 b2) #:pred (< tidx (@dup i)))
+      (accumulate acc4 (list a1 b2) #:pred #f)
+      
+      (accumulate acc1 (list a2 b1) #:pred #f)
+      (accumulate acc2 (list a2 b1) #:pred (<= (@dup i) tidx))
+      (accumulate acc3 (list a2 b1) #:pred (< tidx (@dup i)))
+      (accumulate acc4 (list a2 b1) #:pred #f)
+      
+      (accumulate acc1 (list a2 b2) #:pred #f)
+      (accumulate acc2 (list a2 b2) #:pred #f)
+      (accumulate acc3 (list a2 b2) #:pred (>= tidx (@dup i)))
+      (accumulate acc4 (list a2 b2) #:pred (< tidx (@dup i))))
+      (pretty-display `(cost-after ,i ,(get-cost)))
+     )
+   (reg-to-global acc1 C threadId)
+   (reg-to-global acc2 C (+ warpSize threadId))
+   (reg-to-global acc3 C (+ (* 2 warpSize) threadId))
+   (reg-to-global acc4 C (+ (* 3 warpSize) threadId)))
+
 (define (test)
-  (for ([w (list 4 5 32)])
-    (let ([ret (run-with-warp-size mult-spec mult w)])
-      (pretty-display `(test ,w ,ret))))
+  (for ([w (list 4)])
+    (let ([ret (run-with-warp-size mult-spec mult64-test w (* 2 w))])
+      (pretty-display `(test ,w ,ret))
+      (pretty-display `(cost ,(get-cost)))))
   )
 ;(test)
 
@@ -287,7 +356,7 @@
   (pretty-display "solving...")
   (assert (andmap
            (lambda (w) (run-with-warp-size mult-spec mult64-sketch w (* 2 w)))
-           (list 32)))
+           (list 4)))
   
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
