@@ -88,11 +88,11 @@
 
    [(?fan eid n k m [c ...])
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
-         k m (?const c ...) (?const m c ...))]
+         k m (?const c ...) (?const m c ...) (?const m c ...))]
 
    [(?fan eid n k m [c ...] #:fw conf-fw)
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
-         k m (?const c ...) (?const m c ...))]
+         k m (?const c ...) (?const m c ...) (?const m c ...))]
    )
   )
 

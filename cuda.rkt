@@ -171,7 +171,7 @@
   (assert (and (>= group 2) (<= group n)))
   (assert (and (>= cj -1) (< cj group)))
   (assert (and (>= ck -1) (< ck group)))
-  (assert (and (>= offset 0) (< ck group)))
+  (assert (and (>= offset 0) (< offset group)))
   
   (define rem (modulo n group))
   (assert (= rem 0))
