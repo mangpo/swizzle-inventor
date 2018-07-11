@@ -168,7 +168,7 @@
 ;; old (fan n c0 c1 c2 c3 j i c11)
 ;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
 (define (fan j n cj dj group conf-fw 
-             k m ck dk [offset 0])
+             k m ck dk #:offset [offset 0] #:dg [dg group])
   (assert (and (>= group 2) (<= group n)))
   (assert (and (>= cj -1) (< cj group)))
   (assert (and (>= ck -1) (< ck group)))
@@ -176,6 +176,7 @@
   
   (define rem (modulo n group))
   (assert (= rem 0))
+  (assert (= (modulo group dg) 0))
 
   ;; dj should be group/gcd(group, cj)
   ;; gcd = group/dj
@@ -193,16 +194,10 @@
         offset1
         (@modulo offset1 common)))
   
-  (@+ (@* (@quotient j group) group) ;; group 
+  (@+ (@* (@quotient j dg) group) ;; group 
       (@modulo (@+ (@* j cj) ;; fan-out
                    offset2)
                group))
-
-    #;(@+ (@* (@quotient j group) group) ;; group 
-          (@modulo (@+ (@* j cj) ;; fan-out
-                       (@quotient (@modulo j group) dj) ;; fan-out: skip collision 
-                       (@* k ck) (@quotient k dk) offset) ;; offset
-                   group))
   )
 
 (define-syntax-rule (fan-prime j n cj

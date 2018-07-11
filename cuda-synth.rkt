@@ -35,11 +35,6 @@
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
          gen-lane? interpret-lane print-lane inst unique unique-warp unique-list)
 
-(define-synthax ?cond
-  ([(?cond x ...)
-    (choose #t #f
-            ((choose < <= > >= =) (choose x ...) (choose x ...)))])
-  )
    
 (define-synthax (?ite x ... depth)
  #:base (choose x ... (@dup (??)))
@@ -77,22 +72,35 @@
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
 
+(define-synthax ?cond
+  ([(?cond x ... #:mod mod)
+    (choose #t #f
+            ((choose < <= > >= =)
+             (choose x ...)
+             (modulo (+ (* (??) (choose x ...)) (??)) mod)
+             ))]
+   [(?cond x ...)
+    (choose #t #f
+            ((choose < <= > >= =) (choose x ...) (choose x ...)))]
+
+   ))
+
 (define-synthax ?fan
   ([(?fan eid n k m)
     (fan eid n (??) (??) (??) (choose 1 -1)
-         k m (??) (??) (??))]
+         k m (??) (??) #:offset (??) #:dg (??))]
 
    [(?fan eid n k m #:fw conf-fw)
     (fan eid n (??) (??) (??) conf-fw
-         k m (??) (??) (??))]
+         k m (??) (??) #:offset (??) #:dg (??))]
 
    [(?fan eid n k m [c ...])
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
-         k m (?const c ...) (?const m c ...) (?const m c ...))]
+         k m (?const c ...) (?const m c ...) #:offset (?const m c ...))]
 
    [(?fan eid n k m [c ...] #:fw conf-fw)
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
-         k m (?const c ...) (?const m c ...) (?const m c ...))]
+         k m (?const c ...) (?const m c ...) #:offset (?const m c ...))]
    )
   )
 
