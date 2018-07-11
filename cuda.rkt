@@ -41,11 +41,12 @@
          create-matrix-local
          global-to-shared shared-to-global
          global-to-local local-to-global
-         global-to-reg reg-to-global
+         global-to-reg reg-to-global reg-to-global-update
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl shfl-send fan fan-prime rotate-nogroup
-         accumulator accumulator? accumulator-val create-accumulator accumulate get-accumulator-val acc-equal? acc-print
+         accumulator accumulator? accumulator-val create-accumulator accumulate accumulate-merge
+         get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
 
 
@@ -490,6 +491,17 @@
         (set* I global-i (get I-reg i))))))
 
 (define-syntax-rule
+  (reg-to-global-update f I-reg I offset)
+  (let* ([bounds (get-dims I)]
+         [blockSize (vector-length offset)])
+    (global-cost (list 1) (list (size-of I-reg)))
+    (for ([i blockSize]
+          [global-i offset])
+      (when (for/and ([b bounds] [i global-i])
+              (< i b))
+        (set* I global-i (f (get* I global-i) (get I-reg i)))))))
+
+(define-syntax-rule
   (for/bounded ([i I]) body ...)
   (letrec ([f (lambda (i bound)
                 (when (< i I)
@@ -734,6 +746,16 @@
   (for/vector ([i veclen])
     (let ([each (map (lambda (x) (if (vector? x) (get x i) x)) l)])
       (%sort each (lambda (x y) (string<? (format "~a" x) (format "~a" y)))))))
+
+(define (accumulate-merge x y)
+  (cond
+    [(and (accumulator? x) (accumulator? y))
+     (accumulator (append (accumulator-val x) (accumulator-val y))
+                  (accumulator-oplist x) (accumulator-opfinal x) (accumulator-veclen x))]
+
+    [(accumulator? x) x]
+    [(accumulator? y) y]
+    [else (assert #f)]))
 
 (define (accumulate x val-list #:pred [pred #t])
   (define (f val-list op-list veclen)

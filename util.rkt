@@ -146,3 +146,11 @@
   (cond
     [(vector? x) (for/vector ([xi x]) (clone xi))]
     [else x]))
+
+(define (lov2vof x)
+  (define vec-len (vector-length (car x)))
+  (define list-len (length x))
+
+  (for/vector ([vi vec-len])
+    (for/list ([li list-len])
+      (vector-ref (list-ref x li) vi))))
