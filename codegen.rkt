@@ -11,6 +11,7 @@
 (define env (make-hash))
 (define matrix-size (make-hash))
 (define cuda-vars (make-hash))
+(define env-consts (hash 'struct-size 2 'warpSize 32))
 
 (define (cuda-var? v)
   (hash-has-key? cuda-vars v))
@@ -22,6 +23,11 @@
   (member f '(local-to-global shared-to-global)))
 (define (let? x)
   (member x '(let let*)))
+
+(define (eval-const v)
+  (if (hash-has-key? env-consts v)
+      (hash-ref env-consts v)
+      v))
 
 (define (print-cuda l)
   (for ([s (flatten l)])
@@ -57,24 +63,29 @@
 (define (convert-statement st)
   (match st
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...) '#:type type))
-     (hash-set! env matrix (length sizes))
+     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "~a ~a~a;" type matrix (dims-str sizes))]
 
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...)))
-     (hash-set! env matrix (length sizes))
+     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "~a ~a~a;" data-type matrix (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...) '#:type type))
-     (hash-set! env matrix (length sizes))
+     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "__shared__ ~a ~a~a;" type matrix (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...)))
-     (hash-set! env matrix (length sizes))
+     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "__shared__ ~a ~a~a;" data-type matrix (dims-str sizes))]
+
+    [(list 'define matrix (list 'make-vector size))
+     ;(hash-set! env matrix 1)
+     (hash-set! matrix-size matrix (list size))
+     (format-indent "~a ~a~a;" data-type matrix (dims-str (list size)))]
 
     [(list 'define var e)
      (define-values (n f) (convert-expr e))
@@ -206,6 +217,50 @@
      (values 1 (lambda (i) (format "~a~a" matrix (dims-str str-list))))
      ]
 
+    [(list 'fan j n* cj* dj* group* conf-fw
+           k m* ck* dk* #:offset offset)
+
+     (define n (eval-const n*))
+     (define cj (eval-const cj*))
+     (define dj (eval-const dj*))
+     (define group (eval-const group*))
+     (define m (eval-const m*))
+     (define ck (eval-const ck*))
+     (define dk (eval-const dk*))
+     
+     (define offset1-a
+       (cond
+         [(equal? dj group) 0]
+         [(equal? group n) (@quotient j dj)]
+         [else (@quotient (@modulo j group) dj)]))
+
+     (define offset1-b (@* k ck))
+
+     (define offset1-c
+       (cond
+         [(equal? dk group) 0] [else (@quotient k dk)]))
+
+     (define offset1 (@+ offset1-a offset1-b offset1-c offset))
+
+     (define common (quotient group dj))
+     (define offset2
+       (cond
+         [(or (= conf-fw 1) (equal? common group)) offset1]
+         [else (@modulo offset1 common)]))
+
+     (define group-offset
+       (cond
+         [(equal? group n) 0] [else (@* (@quotient j group) group)]))
+
+     (pretty-display `(offset2 ,offset2))
+     (define all (@+ group-offset
+                     (@modulo (@+ (@* j cj) offset2) group)))
+
+     (convert-expr all)
+     ]
+
+    ;(fan i struct-size 0 1 2 1 localId warpSize 0 1)
+
     [(list '@dup x)
      (convert-expr x)
      ]
@@ -248,9 +303,53 @@
 
 (define (convert-op op)
   (match op
-    ['quotient "*"]
+    ['quotient "/"]
     ['modulo "%"]
     [x (symbol->string x)]))
+
+(define (@++ xs)
+  (cond
+    [(= (length xs) 1) (car xs)]
+    [else
+     (define y (@++ (cdr xs)))
+     (define x (car xs))
+     (cond
+       [(equal? x 0) y]
+       [(equal? y 0) x]
+       [else `(+ ,x ,y)])
+     ]))
+
+(define (@** xs)
+  (define ret
+  (cond
+    [(= (length xs) 1) (car xs)]
+    [else
+     (define y (@++ (cdr xs)))
+     (define x (car xs))
+     (cond
+       [(equal? x 0) 0]
+       [(equal? y 0) 0]
+       [(equal? x 1) y]
+       [(equal? y 1) x]
+       [else `(* ,x ,y)])
+     ]))
+  (pretty-display `(@** ,xs ,ret))
+  ret
+  )
+
+(define-syntax-rule (@+ x ...) (@++ (list x ...)))
+(define-syntax-rule (@* x ...) (@** (list x ...)))
+
+(define (@quotient x y)
+  (cond
+    [(equal? y 1) x]
+    [(equal? x 0) 0]
+    [else `(quotient ,x ,y)]))
+
+(define (@modulo x y)
+  (cond
+    [(equal? y 1) 0]
+    [else `(modulo ,x ,y)]))
 
 (define func
   '(define (AOS-load-spec threadId blockID blockDim I O a b c)
@@ -276,5 +375,9 @@
            (x (shfl (get I-cached (@dup i)) lane1)))
       (set temp (@dup i) x))))
 
+(define fan
+  '(define lane (fan i struct-size 0 1 2 1 localId warpSize 0 1 #:offset 0)))
+
 ;(racket2cuda func 1)
-(print-cuda (convert-statement loop))
+;(print-cuda (convert-statement loop))
+(print-cuda (convert-statement fan))
