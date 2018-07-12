@@ -324,6 +324,73 @@
   (reg-to-global acc4 C (+ block-offset (x-y-z (* 3 warpSize) 0) threadId))
   )
 
+(define (mult64-shared-int2 threadId blockID blockDim A B C n)
+  (define warpId (get-warpId threadId))
+  (define-shared a-cached (create-matrix (* (x-y-z 2 1) blockDim)))
+  (define-shared b-cached (create-matrix (* (x-y-z 2 1) blockDim)))
+  (define block-offset (* (x-y-z 2 1) blockID blockDim))
+  (global-to-shared A a-cached
+                    (x-y-z 2 1) ;; stride
+                    block-offset
+                    (* (x-y-z 2 1) blockDim))
+  (global-to-shared B b-cached
+                    (x-y-z 2 1) ;; stride
+                    block-offset
+                    (* (x-y-z 2 1) blockDim))
+
+  (pretty-display `(a ,a-cached))
+  
+  (define tidx (get-idInWarp threadId))
+  (define tidy (get-y threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc3 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc5 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc6 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i warpSize])
+    (let* ([lane-a1 (fan tidx n 0 n n 1
+                         i warpSize 1 warpSize #:offset 0)]
+           [lane-a2 (fan tidx n 0 n n 1
+                         i warpSize 1 warpSize #:offset warpSize)]
+           [lane-b1 (fan tidx n 2 warpSize warpSize 1
+                         i warpSize -1 warpSize #:offset 0 #:dg (quotient warpSize 2))]
+           [lane-b2 (fan tidx n 2 warpSize warpSize 1
+                         i warpSize -1 warpSize #:offset 1 #:dg (quotient warpSize 2))]
+           [a1 (get a-cached lane-a1 tidy)]
+           [a2 (get a-cached lane-a2 tidy)]
+           [b1 (get b-cached lane-b1 tidy)]
+           [b2 (get b-cached lane-b2 tidy)]
+          )
+      (accumulate acc1 (list a1 b1) #:pred (<= i (modulo (* 2 tidx) warpSize)))
+      (accumulate acc3 (list a1 b1) #:pred (> i (modulo (* 2 tidx) warpSize)))
+      
+      (accumulate acc2 (list a1 b2) #:pred (<= i (modulo (+ 1 (* 2 tidx)) warpSize)))
+      (accumulate acc4 (list a1 b2) #:pred (> i (modulo (+ 1 (* 2 tidx)) warpSize)))
+      
+      (accumulate acc3 (list a2 b1) #:pred (<= i (modulo (* 2 tidx) warpSize)))
+      (accumulate acc5 (list a2 b1) #:pred (> i (modulo (* 2 tidx) warpSize)))
+      
+      (accumulate acc4 (list a2 b2) #:pred (<= i (modulo (+ 1 (* 2 tidx)) warpSize)))
+      (accumulate acc6 (list a2 b2) #:pred (> i (modulo (+ 1 (* 2 tidx)) warpSize)))
+      ))
+
+  ;; for load int2
+  (define index1 (lov2vof (x-y-z (modulo (* 2 tidx) warpSize) tidy)))
+  (define index2 (+ (x-y-z 1 0) index1))
+  (define half-offset (lov2vof (x-y-z (* warpSize (quotient (* 2 tidx) warpSize)) (@dup 0))))
+
+  (pretty-display `(index ,block-offset ,half-offset ,index1 ,(+ block-offset half-offset index1)))
+  (reg-to-global-update accumulate-merge acc1 C (+ block-offset half-offset index1))
+  (reg-to-global-update accumulate-merge acc2 C (+ block-offset half-offset index2))
+  (reg-to-global-update accumulate-merge acc3 C (+ block-offset half-offset (x-y-z (* 1 warpSize) 0) index1))
+  (reg-to-global-update accumulate-merge acc4 C (+ block-offset half-offset (x-y-z (* 1 warpSize) 0) index2))
+  (reg-to-global-update accumulate-merge acc5 C (+ block-offset half-offset (x-y-z (* 2 warpSize) 0) index1))
+  (reg-to-global-update accumulate-merge acc6 C (+ block-offset half-offset (x-y-z (* 2 warpSize) 0) index2))
+
+  )
+
 ;; warp-size=4, bw=8: 20/516
 (define (mult64-shared-sketch threadId blockID blockDim A B C n)
   (define warpId (get-warpId threadId))
