@@ -11,7 +11,7 @@
 (define env (make-hash))
 (define matrix-size (make-hash))
 (define cuda-vars (make-hash))
-(define env-consts (hash 'struct-size 2 'warpSize 32))
+(define env-consts (hash 'struct-size 3 'warpSize 32))
 
 (define (cuda-var? v)
   (hash-has-key? cuda-vars v))
@@ -70,8 +70,8 @@
 
 
 (define indent-str "")
-(define (inc-indent) (set! indent-str (string-append indent-str "  ")))
-(define (dec-indent) (set! indent-str (substring indent-str 2)))
+(define (inc-indent) (set! indent-str (string-append indent-str "  ")) (list))
+(define (dec-indent) (set! indent-str (substring indent-str 2)) (list))
 (define-syntax-rule (format-indent s args ...)
   (string-append indent-str (format s args ...)))
 
@@ -96,6 +96,41 @@
      ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "__shared__ ~a ~a~a;" data-type (sanitize matrix) (dims-str sizes))]
+
+    ;; log M rotations
+    [(list 'define y (list 'permute-vector x size
+                           (list 'lambda (list i) (list 'fan fan-args ...))))
+     ;(hash-set! env matrix (length sizes))
+     (define statements (list))
+     (define (add-st x) (set! statements (cons x statements)))
+
+     (define n (eval-const size))
+     (define (def-loop skip)
+       (when (< skip n)
+         (add-st (convert-statement
+                  `(define ,(format "_~a~a" x (sub1 skip))
+                     (make-vector ,size))))
+         (def-loop (* 2 skip))))
+     (def-loop 2)
+     
+     (add-st (convert-statement `(define ,y (make-vector ,size))))
+     (hash-set! env i 1)
+     (define-values (i-expr j-expr) (apply convert-fan2 fan-args))
+
+     (add-st (format-indent "{"))
+     (inc-indent)
+     (add-st (format-indent "int rot = (~a) % ~a;" j-expr n))
+
+     (define (loop skip)
+       (when (< skip n)
+         (add-st (rotate-log-step x y n skip 'rot i i-expr (>= (* 2 skip) n)))
+         (loop (* 2 skip))))
+     
+     (loop 1)
+     (dec-indent)
+     (add-st (format-indent "}"))
+     (reverse statements)]
+     
 
     [(list 'define matrix (list 'make-vector size))
      ;(hash-set! env matrix 1)
@@ -352,6 +387,59 @@
 
      (convert-expr all))
 
+(define (convert-fan2 j n* cj* dj* group* conf-fw
+                     k m* ck* dk* [offset 0])
+  (define n (eval-const n*))
+  (define cj (eval-const cj*))
+  (define dj (eval-const dj*))
+  (define group (eval-const group*))
+  (define m (eval-const m*))
+  (define ck (eval-const ck*))
+  (define dk (eval-const dk*))
+  
+  (unless (equal? group n)
+    (raise (format "fan function for permute-vector must have (~a) n = (~a) group." n group)))
+  
+  (define offset-j ;j
+    (cond
+      [(equal? dj group) 0]
+      [(equal? group n) (@quotient j dj)]
+      [else (@quotient (@modulo j group) dj)]))
+  
+  (define offset1-b (@* k ck)) ;k
+  
+  (define offset1-c
+    (cond
+      [(equal? dk group) 0] [else (@quotient k dk)])) ;k
+  
+  (define offset-k (@+ offset1-b offset1-c offset))
+
+  (define common
+    (if (and (number? group) (number? dj))
+        (quotient group dj) (@quotient group dj)))
+
+  (unless (or (= conf-fw 1) (equal? common group))
+    (unless (equal? common 1)
+      (raise (exn "fan function for permute-vector: invalid conf-fw, group, dj."))
+      (set! offset-j 0)
+      (set! offset-k 0)))
+
+  (define-values (j-n j-f) (convert-expr (@+ (@* j cj) offset-j)))
+  (define-values (k-n k-f) (convert-expr offset-k))
+  (values (j-f 0) (k-f 0)))
+
+(define (rotate-log-step x* y* n skip rot i i-expr last-iter)
+  (define x (if (= skip 1) x* (format "_~a~a" x* (sub1 skip))))
+  (define y (if last-iter y* (format "_~a~a" x* skip)))
+  (list
+   (format-indent "for(int ~a=0; ~a<~a; ~a++) {" i i n i)
+   (inc-indent)
+   (format-indent "if(~a & ~a) ~a[~a] = ~a[~a];" rot skip y i x i)
+   (format-indent "else ~a[~a] = ~a[(~a+~a)%~a];" y i x (if last-iter i-expr i) skip n)
+   (dec-indent)
+   (format-indent "}")
+   ))
+
 (define (convert-op op)
   (match op
     ['quotient "/"]
@@ -411,36 +499,39 @@
     [else `(modulo ,x ,y)]))
 
 (define func
-  '(define (AOS-load2 threadId blockID blockDim I O a b c)
-   (define I-cached (create-matrix-local (x-y-z struct-size)))
-   (define O-cached (create-matrix-local (x-y-z struct-size)))
-   (define warpID (get-warpId threadId))
-   (define offset
-     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
-   (define gid (get-global-threadId threadId blockID))
-   (global-to-local
-    I
-    I-cached
-    (x-y-z 1)
-    offset
-    (x-y-z (* warpSize struct-size))
-    #f)
-   (define localId (get-idInWarp threadId))
-   (for
-    ((i struct-size))
-    (let* ((index (fan i struct-size 0 1 2 1 localId warpSize 0 1))
-           (lane (fan localId warpSize 2 16 warpSize -1 i struct-size 0 1))
-           (x (shfl (get I-cached index) lane))
-           (index-o (fan i struct-size 0 1 2 1 localId warpSize 0 16)))
-      (set O-cached index-o x)))
-   (local-to-global
-    O-cached
-    O
-    (x-y-z 1)
-    offset
-    (x-y-z (* warpSize struct-size))
-    #f)))
-
+  '(define (AOS-load3 threadId blockID blockDim I O a b c)
+     (define I-cached (create-matrix-local (x-y-z struct-size)))
+     (define O-cached (create-matrix-local (x-y-z struct-size)))
+     (define warpID (get-warpId threadId))
+     (define offset
+       (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+     (define gid (get-global-threadId threadId blockID))
+     (global-to-local
+      I
+      I-cached
+      (x-y-z 1)
+      offset
+      (x-y-z (* warpSize struct-size))
+      #f #:round struct-size)
+     (define localId (get-idInWarp threadId))
+     (define I-cached2 (permute-vector I-cached struct-size
+                                       (lambda (i)
+                                         (fan i struct-size 2 3 3 1 localId warpSize 0 1))))
+     
+     (for
+         ((i struct-size))
+       (let* ((lane (fan localId warpSize 3 32 32 1 i struct-size 0 1))
+              (x (shfl (get I-cached2 (@dup i)) lane))
+              (index-o (fan i struct-size 1 3 3 1 localId warpSize 0 warpSize)))
+         (set O-cached index-o x)))
+     (local-to-global
+      O-cached
+      O
+      (x-y-z 1)
+      offset
+      (x-y-z (* warpSize struct-size))
+      #f #:round struct-size)))
+  
 (define loop
   '(for
     ((i struct-size))

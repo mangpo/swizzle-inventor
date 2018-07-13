@@ -44,7 +44,7 @@
          global-to-reg reg-to-global reg-to-global-update
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
-         shfl shfl-send fan fan-prime rotate-nogroup
+         shfl shfl-send fan fan-prime rotate-nogroup permute-vector
          accumulator accumulator? accumulator-val create-accumulator accumulate accumulate-merge
          get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
@@ -164,6 +164,12 @@
   (if (= y 0)
       x
       (gcd/bound y (modulo x y) (sub1 depth))))
+
+(define (permute-vector x n f)
+  (define y (create-matrix-local (x-y-z n)))
+  (for ([i n])
+    (set y (@dup i) (get x (f i))))
+  y)
 
 ;; old (fan n c0 c1 c2 c3 j i c11)
 ;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
@@ -370,8 +376,8 @@
                           #:round [round 1])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
-  (assert (andmap (vector->list (@<= sizes (@* blockDim pattern round)))))
-  (assert (andmap (vector->list (@> sizes (@* blockDim pattern (@- round 1))))))
+  (assert (all? (@<= sizes (@* blockDim pattern round)) true?))
+  (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?))
   
   (cond
     [(= (length offset) 1)
@@ -427,8 +433,8 @@
       (global-cost (reverse pattern) (reverse sizes))
       (global-cost pattern sizes))
   (define bounds (get-dims I))
-  (assert (andmap (vector->list (@<= sizes (@* blockDim pattern round)))))
-  (assert (andmap (vector->list (@> sizes (@* blockDim pattern (@- round 1))))))
+  (assert (all? (@<= sizes (@* blockDim pattern round)) true?))
+  (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?))
   
   (cond
     [(= (length offset) 1)
@@ -523,8 +529,8 @@
                          #:warp-shape [warp-shape warpSize]
                          #:round [round 1])
   (global-cost pattern sizes)
-  (assert (andmap (vector->list (@<= sizes (@* warp-shape pattern round)))))
-  (assert (andmap (vector->list (@> sizes (@* warp-shape pattern (@- round 1))))))
+  (assert (all? (@<= sizes (@* warp-shape pattern round)) true?))
+  (assert (all? (@> sizes (@* warp-shape pattern (@- round 1))) true?))
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -615,8 +621,8 @@
     (if transpose
         (global-cost (reverse pattern) (reverse sizes))
         (global-cost pattern sizes))
-    (assert (andmap (vector->list (@<= sizes (@* warp-shape pattern round)))))
-    (assert (andmap (vector->list (@> sizes (@* warp-shape pattern (@- round 1))))))
+  (assert (all? (@<= sizes (@* warp-shape pattern round)) true?))
+  (assert (all? (@> sizes (@* warp-shape pattern (@- round 1))) true?))
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
