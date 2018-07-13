@@ -365,9 +365,14 @@
 (define (create-matrix-local dims [init (lambda () 0)])
   (create-matrix (append dims (list blockSize))))
 
-(define (global-to-shared I I-shared pattern offset sizes #:transpose [transpose #f])
+(define (global-to-shared I I-shared pattern offset sizes
+                          #:transpose [transpose #f]
+                          #:round [round 1])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
+  (assert (andmap (vector->list (@<= sizes (@* blockDim pattern round)))))
+  (assert (andmap (vector->list (@> sizes (@* blockDim pattern (@- round 1))))))
+  
   (cond
     [(= (length offset) 1)
      (let ([size-x (get-x sizes)]
@@ -422,6 +427,9 @@
       (global-cost (reverse pattern) (reverse sizes))
       (global-cost pattern sizes))
   (define bounds (get-dims I))
+  (assert (andmap (vector->list (@<= sizes (@* blockDim pattern round)))))
+  (assert (andmap (vector->list (@> sizes (@* blockDim pattern (@- round 1))))))
+  
   (cond
     [(= (length offset) 1)
      (let ([size-x (get-x sizes)]
@@ -511,8 +519,12 @@
 ;; The pattern is round-robin in all deminsion.
 ;; stride-x = how many elements belong to a thread in one round.
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
-(define (global-to-local I I-reg pattern offset sizes transpose #:warp-shape [warp-shape #f])
+(define (global-to-local I I-reg pattern offset sizes transpose
+                         #:warp-shape [warp-shape warpSize]
+                         #:round [round 1])
   (global-cost pattern sizes)
+  (assert (andmap (vector->list (@<= sizes (@* warp-shape pattern round)))))
+  (assert (andmap (vector->list (@> sizes (@* warp-shape pattern (@- round 1))))))
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]
@@ -596,12 +608,15 @@
     [else (raise "unimplemented")]
     ))
 
-(define-syntax-rule 
-  (local-to-global I-reg I pattern offset sizes transpose)
+(define (local-to-global I-reg I pattern offset sizes transpose
+                         #:warp-shape [warp-shape warpSize]
+                         #:round [round 1])
   (begin
     (if transpose
         (global-cost (reverse pattern) (reverse sizes))
         (global-cost pattern sizes))
+    (assert (andmap (vector->list (@<= sizes (@* warp-shape pattern round)))))
+    (assert (andmap (vector->list (@> sizes (@* warp-shape pattern (@- round 1))))))
   (cond
     [(= (length blockDim) 1)
      (let* ([size-x (get-x sizes)]

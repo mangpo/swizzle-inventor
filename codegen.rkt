@@ -29,11 +29,17 @@
       (hash-ref env-consts v)
       v))
 
+(define (sanitize x)
+  (cond
+    [(number? x) x]
+    [(string? x) (string-replace x "-" "_")]
+    [else (string-replace (symbol->string x) "-" "_")]))
+
 (define (print-cuda l)
   (for ([s (flatten l)])
     (pretty-display s)))
 
-(define (racket2cuda expr d)
+(define (racket2cuda expr d #:const-map [const-map #f])
   (set! dims d)
   (match expr
     [(list 'define (list func-name tid bid bsize args ...) body ...)
@@ -46,13 +52,22 @@
      (hash-set! cuda-vars tid "threadIdx")
      (hash-set! cuda-vars block-id "blockIdx")
      (hash-set! cuda-vars block-size "blockDim")
-     
-     (for/list ([st body]) (convert-statement st))
+     (when const-map (set! env-consts const-map))
+
+     (define args-str
+       (for/list ([arg args])
+         (format "const ~a *~a" data-type (sanitize arg))))
+     (define declare
+       (format-indent "__global__ void ~a(~a) {" (sanitize func-name) (string-join args-str ", ")))
+     (inc-indent)
+     (define body-ret (for/list ([st body]) (convert-statement st)))
+     (dec-indent)
+
+     (list declare
+           body-ret
+           (format-indent "}"))
      ]))
 
-(define (dims-str sizes)
-  (define dims (map (lambda (s) (format "[~a]" s)) (reverse sizes)))
-  (string-join dims ""))
 
 (define indent-str "")
 (define (inc-indent) (set! indent-str (string-append indent-str "  ")))
@@ -65,35 +80,41 @@
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...) '#:type type))
      ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
-     (format-indent "~a ~a~a;" type matrix (dims-str sizes))]
+     (format-indent "~a ~a~a;" type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...)))
      ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
-     (format-indent "~a ~a~a;" data-type matrix (dims-str sizes))]
+     (format-indent "~a ~a~a;" data-type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...) '#:type type))
      ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
-     (format-indent "__shared__ ~a ~a~a;" type matrix (dims-str sizes))]
+     (format-indent "__shared__ ~a ~a~a;" type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...)))
      ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
-     (format-indent "__shared__ ~a ~a~a;" data-type matrix (dims-str sizes))]
+     (format-indent "__shared__ ~a ~a~a;" data-type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define matrix (list 'make-vector size))
      ;(hash-set! env matrix 1)
      (hash-set! matrix-size matrix (list size))
-     (format-indent "~a ~a~a;" data-type matrix (dims-str (list size)))]
+     (format-indent "~a ~a~a;" data-type (sanitize matrix) (dims-str (list size)))]
 
     [(list 'define var e)
      (define-values (n f) (convert-expr e))
      (hash-set! env var n)
      (if (= n 1)
-         (format-indent "~a ~a = ~a;" index-type var (f 0))
+         (format-indent "~a ~a = ~a;" index-type (sanitize var) (f 0))
          (for/list ([i n])
-           (format-indent "~a ~a~a = ~a;" index-type var i (f i))))]
+           (format-indent "~a ~a~a = ~a;" index-type (sanitize var) i (f i))))]
+
+    [(list 'global-to-reg global reg idx)
+     (format-indent "~a = ~a~a;" (sanitize reg) (sanitize global) (dims-str (list idx)))]
+
+    [(list 'reg-to-global reg global idx)
+     (format-indent "~a~a = ~a;" (sanitize global) (dims-str (list idx)) (sanitize reg))]
 
     [(list (? load-store? f) A B stride offset size transpose)
      (define warp-shape
@@ -104,9 +125,10 @@
      (define global (if (load? f) A B))
      (define local (if (load? f) B A))
      (convert-global-to-local cuda-f
-                              global local stride offset size transpose warp-shape
+                              A B 1 stride offset size transpose warp-shape
                               (hash-ref matrix-size local))
      ]
+    
     
 
     [(list (? load-store? f) A B stride offset size transpose '#:warp-shape warp-shape)
@@ -114,7 +136,29 @@
      (define global (if (load? f) A B))
      (define local (if (load? f) B A))
      (convert-global-to-local cuda-f
-                              global local stride offset size transpose warp-shape
+                              A B 1 stride offset size transpose warp-shape
+                              (hash-ref matrix-size local))
+     ]
+
+    [(list (? load-store? f) A B stride offset size transpose '#:round round)
+     (define warp-shape
+       (cond [(= dims 1) 32]
+             [(= dims 2) '(x-y-z 32 1)]
+             [(= dims 3) '(x-y-z 32 1 1)]))
+     (define cuda-f (string-replace (symbol->string f) "-" "_"))
+     (define global (if (load? f) A B))
+     (define local (if (load? f) B A))
+     (convert-global-to-local cuda-f
+                              A B round stride offset size transpose warp-shape
+                              (hash-ref matrix-size local))
+     ]
+
+    [(list (? load-store? f) A B stride offset size transpose '#:warp-shape warp-shape '#:round round)
+     (define cuda-f (string-replace (symbol->string f) "-" "_"))
+     (define global (if (load? f) A B))
+     (define local (if (load? f) B A))
+     (convert-global-to-local cuda-f
+                              A B round stride offset size transpose warp-shape
                               (hash-ref matrix-size local))
      ]
 
@@ -122,8 +166,10 @@
      (for ([v vs])
        (hash-set! env v 1))
      (append
-      (for/list ([v vs] [l vs])
-        (let ([temp (format-indent "for(int ~a = 0; ~a < ~a; ~a++) {" v v l v)])
+      (for/list ([v vs] [l ls])
+        (let* ([x (sanitize v)]
+               [b (sanitize l)]
+               [temp (format-indent "for(int ~a = 0; ~a < ~a; ~a++) {" x x b x)])
           (inc-indent)
           temp))
       (list (convert-statement body))
@@ -132,49 +178,45 @@
         (format-indent "}")))
      ]
 
-    [(list let? (list (list vs es) ...) body)
+    [(list let? (list (list vs es) ...) body ...)
      (append
       (for/list ([e es] [v vs])
         (let-values ([(n f) (convert-expr e)])
           (hash-set! env v n)
           (cond
             [(= n 1)
-             (format-indent "int ~a = ~a;" v (f 0))]
+             (format-indent "int ~a = ~a;" (sanitize v) (f 0))]
            [else
-            (for/list ([i n]) (format-indent "int ~a~a = ~a;" v i (f i)))])
+            (for/list ([i n]) (format-indent "int ~a~a = ~a;" (sanitize v) i (f i)))])
           ))
-      (list (convert-statement body)))
+      (for/list ([st body])
+        (convert-statement st)))
      ]
 
     [(list 'set matrix idxs ... v)
-     (define str-list
-       (for/list ([idx idxs])
-         (let-values ([(n idx-f) (convert-expr idx)])
-           (idx-f 0))))
-
      (define v-str
        (let-values ([(n v-f) (convert-expr v)])
          (v-f 0)))
 
-     (format-indent "~a~a = ~a;" matrix (dims-str str-list) v-str)
+     (format-indent "~a~a = ~a;" (sanitize matrix) (dims-str idxs) v-str)
      ]
     
     ))
 
-(define (convert-global-to-local name A B stride offset size transpose warp-shape local-size)
+(define (convert-global-to-local name A B round stride offset size transpose warp-shape local-size)
   (define-values (stride-n stride-f) (convert-expr stride))
   (define-values (offset-n offset-f) (convert-expr offset))
   (define-values (size-n size-f) (convert-expr size))
   (define-values (shape-n shape-f) (convert-expr warp-shape))
+  (define-values (round-n round-f) (convert-expr round))
   (define d (max stride-n offset-n size-n))
   (define str-list
-    (list (format "~a~a(~a, ~a, " name d A B)
-          "," (string-join (for/list ([i d]) (stride-f i)) ", ")
+    (list (format "~a~a(~a, ~a" name d (sanitize A) (sanitize B))
+          "," (string-join (for/list ([i d]) (round-f i)) ", ")
           "," (string-join (for/list ([i d]) (offset-f i)) ", ")
-          "," (string-join (for/list ([i d]) (size-f i)) ", ")
+          "," (string-join (for/list ([i d]) (stride-f i)) ", ")
           "," (string-join (for/list ([i d]) (shape-f i)) ", ")
-          "," (string-join (for/list ([i d]) (format "~a" (list-ref local-size i))) ", ")
-          "," (if transpose "1" "0") ");"))
+          ");"))
   (format-indent "~a" (string-join (flatten str-list) ""))
   )
 
@@ -214,12 +256,63 @@
          (let-values ([(n idx-f) (convert-expr idx)])
            (idx-f 0))))
 
-     (values 1 (lambda (i) (format "~a~a" matrix (dims-str str-list))))
+     (values 1 (lambda (i) (format "~a~a" (sanitize matrix) (dims-str str-list))))
      ]
 
     [(list 'fan j n* cj* dj* group* conf-fw
-           k m* ck* dk* #:offset offset)
+           k m* ck* dk*)
+     (convert-fan j n* cj* dj* group* conf-fw
+                  k m* ck* dk* 0)]
 
+    [(list 'fan j n* cj* dj* group* conf-fw
+           k m* ck* dk* #:offset offset)
+     (convert-fan j n* cj* dj* group* conf-fw
+                  k m* ck* dk* offset)]
+
+    [(list '@dup x)
+     (convert-expr x)
+     ]
+
+    [(list op args ...)
+     (define max-d 1)
+     (define rets 
+       (for/list ([arg args])
+         (let-values ([(n f) (convert-expr arg)])
+           (cons n f))))
+
+     (values max-d
+             (lambda (i)
+               (format "(~a)"
+                       (string-join
+                        (for/list ([ret rets]) ((cdr ret) i))
+                        (convert-op op)))))
+     ]
+
+    [(list 'x-y-z xs ...)
+     (values (length xs) (lambda (i)
+                           (define-values (n f) (convert-expr (list-ref xs i)))
+                           (f 0)))
+     ]
+
+    [(? cuda-var? v)
+     (define name (hash-ref cuda-vars v))
+     (values dims
+             (lambda (i)
+               (cond [(= i 0) (format "~a.x" name)]
+                     [(= i 1) (format "~a.y" name)]
+                     [(= i 2) (format "~a.z" name)])))
+     ]
+
+    [v
+     (define d (if (hash-has-key? env v) (hash-ref env v) 1))
+     (cond
+       [(= d 1) (values d (lambda (i) (format "~a" (sanitize v))))]
+       [else (values d (lambda (i) (format "~a~a" (sanitize v) i)))])
+     ]
+    ))
+
+(define (convert-fan j n* cj* dj* group* conf-fw
+                     k m* ck* dk* offset)
      (define n (eval-const n*))
      (define cj (eval-const cj*))
      (define dj (eval-const dj*))
@@ -242,7 +335,9 @@
 
      (define offset1 (@+ offset1-a offset1-b offset1-c offset))
 
-     (define common (quotient group dj))
+     (define common
+       (if (and (number? group) (number? dj))
+           (quotient group dj) (@quotient group dj)))
      (define offset2
        (cond
          [(or (= conf-fw 1) (equal? common group)) offset1]
@@ -251,61 +346,26 @@
      (define group-offset
        (cond
          [(equal? group n) 0] [else (@* (@quotient j group) group)]))
-
-     (pretty-display `(offset2 ,offset2))
+     
      (define all (@+ group-offset
                      (@modulo (@+ (@* j cj) offset2) group)))
 
-     (convert-expr all)
-     ]
-
-    ;(fan i struct-size 0 1 2 1 localId warpSize 0 1)
-
-    [(list '@dup x)
-     (convert-expr x)
-     ]
-
-    [(list op args ...)
-     (define max-d 1)
-     (define rets 
-       (for/list ([arg args])
-         (let-values ([(n f) (convert-expr arg)])
-           (cons n f))))
-
-     (values max-d
-             (lambda (i)
-               (format "(~a)"
-                       (string-join
-                        (for/list ([ret rets]) ((cdr ret) i))
-                        (convert-op op)))))
-     ]
-
-    [(list 'x-y-z xs ...)
-     (values (length xs) (lambda (i) (list-ref xs i)))
-     ]
-
-    [(? cuda-var? v)
-     (define name (hash-ref cuda-vars v))
-     (values dims
-             (lambda (i)
-               (cond [(= i 0) (format "~a.x" name)]
-                     [(= i 1) (format "~a.y" name)]
-                     [(= i 2) (format "~a.z" name)])))
-     ]
-
-    [v
-     (define d (if (hash-has-key? env v) (hash-ref env v) 1))
-     (cond
-       [(= d 1) (values d (lambda (i) (format "~a" v)))]
-       [else (values d (lambda (i) (format "~a~a" v i)))])
-     ]
-    ))
+     (convert-expr all))
 
 (define (convert-op op)
   (match op
     ['quotient "/"]
     ['modulo "%"]
     [x (symbol->string x)]))
+
+(define (dims-str idxs)
+  (define str-list
+       (for/list ([idx idxs])
+         (let-values ([(n idx-f) (convert-expr idx)])
+           (idx-f 0))))
+  
+  (define dims (map (lambda (s) (format "[~a]" s)) str-list))
+  (string-join dims ""))
 
 (define (@++ xs)
   (cond
@@ -333,7 +393,6 @@
        [(equal? y 1) x]
        [else `(* ,x ,y)])
      ]))
-  (pretty-display `(@** ,xs ,ret))
   ret
   )
 
@@ -352,18 +411,35 @@
     [else `(modulo ,x ,y)]))
 
 (define func
-  '(define (AOS-load-spec threadId blockID blockDim I O a b c)
-  (define I-cached (create-matrix-local (x-y-z struct-size)))
-  (define warpID (get-warpId threadId))
-  (define offset (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
-  (define gid (get-global-threadId threadId blockID))
-  (global-to-local I I-cached
-                 (x-y-z struct-size)
-                 offset (x-y-z (* warpSize struct-size)) #f)
-  (local-to-global I-cached O
-                      (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f)
-  )
-  )
+  '(define (AOS-load2 threadId blockID blockDim I O a b c)
+   (define I-cached (create-matrix-local (x-y-z struct-size)))
+   (define O-cached (create-matrix-local (x-y-z struct-size)))
+   (define warpID (get-warpId threadId))
+   (define offset
+     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+   (define gid (get-global-threadId threadId blockID))
+   (global-to-local
+    I
+    I-cached
+    (x-y-z 1)
+    offset
+    (x-y-z (* warpSize struct-size))
+    #f)
+   (define localId (get-idInWarp threadId))
+   (for
+    ((i struct-size))
+    (let* ((index (fan i struct-size 0 1 2 1 localId warpSize 0 1))
+           (lane (fan localId warpSize 2 16 warpSize -1 i struct-size 0 1))
+           (x (shfl (get I-cached index) lane))
+           (index-o (fan i struct-size 0 1 2 1 localId warpSize 0 16)))
+      (set O-cached index-o x)))
+   (local-to-global
+    O-cached
+    O
+    (x-y-z 1)
+    offset
+    (x-y-z (* warpSize struct-size))
+    #f)))
 
 (define loop
   '(for
@@ -378,6 +454,6 @@
 (define fan
   '(define lane (fan i struct-size 0 1 2 1 localId warpSize 0 1 #:offset 0)))
 
-;(racket2cuda func 1)
+(print-cuda (racket2cuda func 1))
 ;(print-cuda (convert-statement loop))
-(print-cuda (convert-statement fan))
+;(print-cuda (convert-statement fan))
