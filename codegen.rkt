@@ -105,30 +105,38 @@
      (define (add-st x) (set! statements (cons x statements)))
 
      (define n (eval-const size))
-     (define (def-loop skip)
-       (when (< skip n)
-         (add-st (convert-statement
-                  `(define ,(format "_~a~a" x (sub1 skip))
-                     (make-vector ,size))))
-         (def-loop (* 2 skip))))
-     (def-loop 2)
      
      (add-st (convert-statement `(define ,y (make-vector ,size))))
      (hash-set! env i 1)
      (define-values (i-expr j-expr) (apply convert-fan2 fan-args))
 
-     (add-st (format-indent "{"))
-     (inc-indent)
-     (add-st (format-indent "int rot = (~a) % ~a;" j-expr n))
+     (cond
+       [(string->number j-expr)
+        (add-st (roate-one-step (sanitize x) (sanitize y) n i i-expr j-expr))
+        ]
 
-     (define (loop skip)
-       (when (< skip n)
-         (add-st (rotate-log-step x y n skip 'rot i i-expr (>= (* 2 skip) n)))
-         (loop (* 2 skip))))
-     
-     (loop 1)
-     (dec-indent)
-     (add-st (format-indent "}"))
+       [else
+        (add-st (format-indent "{"))
+        (inc-indent)
+        
+        (define (def-loop skip)
+          (when (< skip n)
+            (add-st (convert-statement
+                     `(define ,(format "_~a~a" x (sub1 skip))
+                        (make-vector ,size))))
+            (def-loop (* 2 skip))))
+        (def-loop 2)
+        (add-st (format-indent "int rot = (~a) % ~a;" j-expr n))
+        
+        (define (loop skip)
+          (when (< skip n)
+            (add-st (rotate-log-step (sanitize x) (sanitize y) n skip 'rot i i-expr (>= (* 2 skip) n)))
+            (loop (* 2 skip))))
+        
+        (loop 1)
+        (dec-indent)
+        (add-st (format-indent "}"))]
+       )
      (reverse statements)]
      
 
@@ -197,6 +205,24 @@
                               (hash-ref matrix-size local))
      ]
 
+    [(list (? load-store? f) A B stride offset size transpose '#:round round
+           '#:shfl (list 'lambda (list tid i) (list 'fan fan-args ...)))
+     (define-values (fan-n fan-f) (apply convert-fan fan-args))
+     
+     (define warp-shape
+       (cond [(= dims 1) 32]
+             [(= dims 2) '(x-y-z 32 1)]
+             [(= dims 3) '(x-y-z 32 1 1)]))
+     (define cuda-f (string-replace (symbol->string f) "-" "_"))
+     (define global (if (load? f) A B))
+     (define local (if (load? f) B A))
+     (list
+      (format-indent "auto perm_~a = [=] (int ~a, int ~a) -> int{ return ~a; };" (sanitize A) tid i (fan-f 0))
+      (convert-global-to-local cuda-f
+                               A B round stride offset size transpose warp-shape
+                              (hash-ref matrix-size local) #:shfl (format "perm_~a" (sanitize A))))
+     ]
+
     [(list 'for (list (list vs ls) ...) body)
      (for ([v vs])
        (hash-set! env v 1))
@@ -238,7 +264,8 @@
     
     ))
 
-(define (convert-global-to-local name A B round stride offset size transpose warp-shape local-size)
+(define (convert-global-to-local name A B round stride offset size transpose warp-shape local-size
+                                 #:shfl [shfl #f])
   (define-values (stride-n stride-f) (convert-expr stride))
   (define-values (offset-n offset-f) (convert-expr offset))
   (define-values (size-n size-f) (convert-expr size))
@@ -246,11 +273,13 @@
   (define-values (round-n round-f) (convert-expr round))
   (define d (max stride-n offset-n size-n))
   (define str-list
-    (list (format "~a~a(~a, ~a" name d (sanitize A) (sanitize B))
+    (list (format "~a~a~a<~a>(~a, ~a" name (if shfl "_shlf" "") d data-type
+                  (sanitize A) (sanitize B))
           "," (string-join (for/list ([i d]) (round-f i)) ", ")
           "," (string-join (for/list ([i d]) (offset-f i)) ", ")
           "," (string-join (for/list ([i d]) (stride-f i)) ", ")
           "," (string-join (for/list ([i d]) (shape-f i)) ", ")
+          (if shfl (format ",~a" shfl) "")
           ");"))
   (format-indent "~a" (string-join (flatten str-list) ""))
   )
@@ -347,7 +376,7 @@
     ))
 
 (define (convert-fan j n* cj* dj* group* conf-fw
-                     k m* ck* dk* offset)
+                     k m* ck* dk* [offset 0])
      (define n (eval-const n*))
      (define cj (eval-const cj*))
      (define dj (eval-const dj*))
@@ -358,7 +387,7 @@
      
      (define offset1-a
        (cond
-         [(equal? dj group) 0]
+         [(equal? dj n) 0]
          [(equal? group n) (@quotient j dj)]
          [else (@quotient (@modulo j group) dj)]))
 
@@ -366,7 +395,7 @@
 
      (define offset1-c
        (cond
-         [(equal? dk group) 0] [else (@quotient k dk)]))
+         [(equal? dk m) 0] [else (@quotient k dk)]))
 
      (define offset1 (@+ offset1-a offset1-b offset1-c offset))
 
@@ -402,7 +431,7 @@
   
   (define offset-j ;j
     (cond
-      [(equal? dj group) 0]
+      [(equal? dj n) 0]
       [(equal? group n) (@quotient j dj)]
       [else (@quotient (@modulo j group) dj)]))
   
@@ -410,7 +439,7 @@
   
   (define offset1-c
     (cond
-      [(equal? dk group) 0] [else (@quotient k dk)])) ;k
+      [(equal? dk m) 0] [else (@quotient k dk)])) ;k
   
   (define offset-k (@+ offset1-b offset1-c offset))
 
@@ -428,13 +457,22 @@
   (define-values (k-n k-f) (convert-expr offset-k))
   (values (j-f 0) (k-f 0)))
 
+(define (roate-one-step x y n i i-expr j-expr)
+  (list
+   (format-indent "for(int ~a=0; ~a<~a; ~a++) {" i i n i)
+   (inc-indent)
+   (format-indent "~a[~a] = ~a[(~a+~a)%~a];" y i x i-expr j-expr n)
+   (dec-indent)
+   (format-indent "}")
+   ))
+
 (define (rotate-log-step x* y* n skip rot i i-expr last-iter)
   (define x (if (= skip 1) x* (format "_~a~a" x* (sub1 skip))))
   (define y (if last-iter y* (format "_~a~a" x* skip)))
   (list
    (format-indent "for(int ~a=0; ~a<~a; ~a++) {" i i n i)
    (inc-indent)
-   (format-indent "if(~a & ~a) ~a[~a] = ~a[~a];" rot skip y i x i)
+   (format-indent "if((~a & ~a)==0) ~a[~a] = ~a[(~a)%~a];" rot skip y i x (if last-iter i-expr i) n)
    (format-indent "else ~a[~a] = ~a[(~a+~a)%~a];" y i x (if last-iter i-expr i) skip n)
    (dec-indent)
    (format-indent "}")
@@ -499,38 +537,33 @@
     [else `(modulo ,x ,y)]))
 
 (define func
-  '(define (AOS-load3 threadId blockID blockDim I O a b c)
-     (define I-cached (create-matrix-local (x-y-z struct-size)))
-     (define O-cached (create-matrix-local (x-y-z struct-size)))
-     (define warpID (get-warpId threadId))
-     (define offset
-       (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
-     (define gid (get-global-threadId threadId blockID))
-     (global-to-local
-      I
-      I-cached
-      (x-y-z 1)
-      offset
-      (x-y-z (* warpSize struct-size))
-      #f #:round struct-size)
-     (define localId (get-idInWarp threadId))
-     (define I-cached2 (permute-vector I-cached struct-size
-                                       (lambda (i)
-                                         (fan i struct-size 2 3 3 1 localId warpSize 0 1))))
-     
-     (for
-         ((i struct-size))
-       (let* ((lane (fan localId warpSize 3 32 32 1 i struct-size 0 1))
-              (x (shfl (get I-cached2 (@dup i)) lane))
-              (index-o (fan i struct-size 1 3 3 1 localId warpSize 0 warpSize)))
-         (set O-cached index-o x)))
-     (local-to-global
-      O-cached
-      O
-      (x-y-z 1)
-      offset
-      (x-y-z (* warpSize struct-size))
-      #f #:round struct-size)))
+  '(define (AOS-loadhsh3* threadId blockID blockDim I O a b c)
+  (define I-cached (create-matrix-local (x-y-z struct-size)))
+  (define warpID (get-warpId threadId))
+  (define offset
+    (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+  (define gid (get-global-threadId threadId blockID))
+  (global-to-local
+   I
+   I-cached
+   (x-y-z 1)
+   offset
+   (x-y-z (* warpSize struct-size))
+   #f #:round struct-size
+   #:shfl (lambda (localId i) (fan localId warpSize 0 1 32 1 i struct-size 31 1)))
+  (define localId (get-idInWarp threadId))
+  (define O-cached (permute-vector I-cached struct-size
+                                   (lambda (i) (fan i struct-size 2 3 3 1 localId warpSize 0 1))))
+  (local-to-global
+   O-cached
+   O
+   (x-y-z 1)
+   offset
+   (x-y-z (* warpSize struct-size))
+   #f #:round struct-size
+   #:shfl (lambda (localId i)
+            (fan localId warpSize 11 32 32 1 i struct-size 20 1)))
+  ))
   
 (define loop
   '(for

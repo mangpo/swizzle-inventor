@@ -2,7 +2,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 5)
+(define struct-size 3)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -39,7 +39,7 @@
                  (x-y-z struct-size)
                  offset (x-y-z (* warpSize struct-size)) #f)
   (local-to-global I-cached O
-                      (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f)
+                      (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f #:round struct-size)
   )
 
 (define (print-vec x)
@@ -613,9 +613,45 @@
     (x-y-z (* warpSize struct-size))
     #f))
 
+(define (AOS-load3-fan threadId blockID blockDim I O a b c)
+     (define I-cached (create-matrix-local (x-y-z struct-size)))
+     (define O-cached (create-matrix-local (x-y-z struct-size)))
+     (define warpID (get-warpId threadId))
+     (define offset
+       (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
+     (global-to-local
+      I
+      I-cached
+      (x-y-z 1)
+      offset
+      (x-y-z (* warpSize struct-size))
+      #f #:round struct-size)
+     (define localId (get-idInWarp threadId))
+     (define I-cached2 (permute-vector I-cached struct-size
+                                       (lambda (i)
+                                         (fan i struct-size 2 3 3 1 localId warpSize 0 1))))
+     
+     (for
+         ((i struct-size))
+       (let* ((lane (fan localId warpSize 3 32 32 1 i struct-size 0 1))
+              (x (shfl (get I-cached2 (@dup i)) lane))
+              ;(index-o (fan i struct-size 1 3 3 1 localId warpSize 0 warpSize))
+              )
+         (set O-cached (@dup i) x)))
+     (define O-cached2 (permute-vector O-cached struct-size
+                                       (lambda (i)
+                                         (fan i struct-size 1 3 3 1 localId warpSize 0 warpSize))))
+     (local-to-global
+      O-cached2
+      O
+      (x-y-z 1)
+      offset
+      (x-y-z (* warpSize struct-size))
+      #f #:round struct-size))
+
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-loadsh5 w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-load3-fan w)])
       (pretty-display `(test ,w ,ret))))
   )
 (test)

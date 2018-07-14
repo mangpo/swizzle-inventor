@@ -527,7 +527,8 @@
 ;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
 (define (global-to-local I I-reg pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
-                         #:round [round 1])
+                         #:round [round 1]
+                         #:shfl [shfl (lambda (tid k) tid)])
   (global-cost pattern sizes)
   (assert (all? (@<= sizes (@* warp-shape pattern round)) true?))
   (assert (all? (@> sizes (@* warp-shape pattern (@- round 1))) true?))
@@ -545,7 +546,7 @@
                              (vector-ref (get-x offset) (* warp warpSize)))]
                [inc-x 0])
            ;(pretty-display `(offset-x ,offset-x))
-           (for/bounded ([it iter-x])
+           #;(for/bounded ([it iter-x])
              (for ([t warpSize])
                (for/bounded ([my-i stride-x])
                  ;(pretty-display `(loop ,warp ,it ,t ,my-i))
@@ -559,6 +560,21 @@
                    ;(pretty-display `(loop-true))
                    )
                  (set! inc-x (+ inc-x 1)))))
+
+           (for/bounded ([it iter-x])
+             (for ([t warpSize])
+               (let ([t-from (shfl t it)])
+               (for/bounded ([my-i stride-x])
+                 ;(pretty-display `(loop ,warp ,it ,t ,my-i))
+                 (when (and (< inc-x size-x)
+                            (< (+ offset-x inc-x) I-len)
+                            (< (+ my-i (* it stride-x)) I-reg-len)
+                            )
+                   (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
+                        (+ my-i (* it stride-x)) ;; local index
+                        (vector-ref I (+ offset-x (* it stride-x warpSize) (* stride-x t-from) my-i)))
+                   ;(pretty-display `(loop-true))
+                   )))))
            )))
      ]
 
@@ -588,15 +604,16 @@
            (for/bounded ([it-y iter-y])
            (for/bounded ([it-x iter-x])
              (for ([t warpSize])
+               (let ([t-from (shfl t (+ (* it-y iter-x) it-x))])
                (for/bounded ([my-y stride-y])
                (for/bounded ([my-x stride-x])
                  ;(pretty-display `(loop ,warp ,it-x ,t ,my-x))
                  (let ([global-y (+ offset-y
                                     (* size-y warp) (* it-y warp-shape-y stride-y)
-                                    (* (quotient t warp-shape-x) stride-y) my-y)]
+                                    (* (quotient t-from warp-shape-x) stride-y) my-y)]
                        [global-x (+ offset-x
                                     (* size-x warp) (* it-x warp-shape-x stride-x)
-                                    (* (modulo t warp-shape-x) stride-x) my-x)]
+                                    (* (modulo t-from warp-shape-x) stride-x) my-x)]
                        [local-y (+ my-y (* it-y stride-y))]
                        [local-x (+ my-x (* it-x stride-x))]
                        )
@@ -606,7 +623,7 @@
                    (set I-reg local-x local-y
                         (+ t (* warp warpSize)) ;; thread in a block
                         (get I global-x global-y
-                             )))))))))
+                             ))))))))))
            )))
      ]
 
@@ -616,7 +633,8 @@
 
 (define (local-to-global I-reg I pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
-                         #:round [round 1])
+                         #:round [round 1]
+                         #:shfl [shfl (lambda (tid k) tid)])
   (begin
     (if transpose
         (global-cost (reverse pattern) (reverse sizes))
@@ -639,7 +657,7 @@
                              (vector-ref (get-x offset) (* warp warpSize)))]
                [inc-x 0])
            ;(pretty-display `(offset-x ,offset-x))
-           (for/bounded ([it iter-x])
+           #;(for/bounded ([it iter-x])
              (for ([t warpSize])
                (for/bounded ([my-i stride-x])
                  (when (and (< inc-x size-x)
@@ -652,6 +670,20 @@
                                  (+ my-i (* it stride-x)))) ;; local index
                    )
                  (set! inc-x (+ inc-x 1)))))
+           (for/bounded ([it iter-x])
+             (for ([t warpSize])
+               (let ([t-from (shfl t it)])
+               (for/bounded ([my-i stride-x])
+                 ;(pretty-display `(loop ,warp ,it ,t ,my-i))
+                 (when (and (< inc-x size-x)
+                            (< (+ offset-x inc-x) I-len)
+                            (< (+ my-i (* it stride-x)) I-reg-len)
+                            )
+                   (vector-set! I (+ offset-x (* it stride-x warpSize) (* stride-x t-from) my-i)
+                                (vector-ref
+                                 (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
+                                 (+ my-i (* it stride-x)))) ;; local index
+                   )))))
            )))
      ]
 
