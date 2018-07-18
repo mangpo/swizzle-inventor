@@ -45,7 +45,7 @@
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
          shfl shfl-send fan fan-prime rotate-nogroup permute-vector
-         accumulator accumulator? accumulator-val create-accumulator accumulate accumulate-merge
+         accumulator accumulator? accumulator-val create-accumulator accumulate accumulate-merge accumulate-final
          get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
 
@@ -371,13 +371,13 @@
 (define (create-matrix-local dims [init (lambda () 0)])
   (create-matrix (append dims (list blockSize))))
 
-(define (global-to-shared I I-shared pattern offset sizes
-                          #:transpose [transpose #f]
-                          #:round [round 1])
+(define (global-to-shared I I-shared pattern offset sizes [transpose #f]
+                          #:round [round 1] #:size [s #f])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
   (assert (all? (@<= sizes (@* blockDim pattern round)) true?))
   (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?))
+  (when (> (length pattern) 1) (assert s "#:size must be specified for dimenion > 1"))
   
   (cond
     [(= (length offset) 1)
@@ -428,7 +428,7 @@
                (set I-shared x y z (get I (+ offset-x x) (+ offset-y y) (+ offset-z z)))))))]
     ))
 
-(define (shared-to-global I-shared I pattern offset sizes #:transpose [transpose #f])
+(define (shared-to-global I-shared I pattern offset sizes [transpose #f] #:round [round 1] #:size [s #f])
   (if transpose
       (global-cost (reverse pattern) (reverse sizes))
       (global-cost pattern sizes))
@@ -475,7 +475,26 @@
                (set I (+ offset-x x) (+ offset-y y) (+ offset-z z) (get I-shared x y z))))))]
     ))
 
-(define-syntax-rule
+(define-syntax global-to-reg
+    (syntax-rules ()
+      ((global-to-reg I I-reg offset)
+       (let* ([bounds (get-dims I)]
+              [blockSize (vector-length offset)]
+              [new-I-reg (make-vector blockSize #f)])
+         (global-cost (list 1) (list (size-of I-reg)))
+         (for ([t blockSize])
+           (set new-I-reg t (clone I-reg)))
+         (set! I-reg new-I-reg)
+         (for ([i blockSize]
+               [global-i offset])
+           (when (for/and ([b bounds] [i global-i]) (< i b))
+             (set I-reg i (get* I global-i))))))
+
+      ((global-to-reg I I-reg offset #:size s)
+       (global-to-reg I I-reg offset))))
+
+
+#;(define-syntax-rule
   (global-to-reg I I-reg offset)
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)]
@@ -489,8 +508,7 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set I-reg i (get* I global-i))))))
 
-(define-syntax-rule
-  (reg-to-global I-reg I offset)
+(define (reg-to-global I-reg I offset #:size [s #f])
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
     (global-cost (list 1) (list (size-of I-reg)))
@@ -499,8 +517,7 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set* I global-i (get I-reg i))))))
 
-(define-syntax-rule
-  (reg-to-global-update f I-reg I offset)
+(define (reg-to-global-update f I-reg I offset #:size [s #f])
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
     (global-cost (list 1) (list (size-of I-reg)))
@@ -804,6 +821,8 @@
     [(accumulator? x) x]
     [(accumulator? y) y]
     [else (assert #f)]))
+
+(define (accumulate-final x) x)
 
 (define (accumulate x val-list #:pred [pred #t])
   (define (f val-list op-list veclen)

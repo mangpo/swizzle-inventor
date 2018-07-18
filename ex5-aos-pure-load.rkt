@@ -28,7 +28,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 4)
+(define struct-size 3)
 (define n-block 1)
 
 
@@ -67,80 +67,11 @@
                  (x-y-z struct-size)
                  offset (x-y-z (* warpSize struct-size)) #f)
   (local-to-global I-cached O
-                      (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f)
+                      (x-y-z 1) offset (x-y-z (* warpSize struct-size)) #f #:round struct-size)
   )
 
 (define (print-vec x)
   (format "#(~a)" (string-join (for/list ([xi x]) (format "~a" xi)))))
-
-(define (AOS-load-test threadId blockID blockDim I O a b c)
-   (define log-a (bvlog a))
-   (define log-b (bvlog b))
-   (define log-c (bvlog c))
-   (define log-m (bvlog struct-size))
-   (define log-n (bvlog warpSize))
-   (define I-cached (create-matrix-local (x-y-z struct-size)))
-   (define O-cached (create-matrix-local (x-y-z struct-size)))
-   (define warpID (get-warpId threadId))
-   (define offset
-     (+ (* struct-size blockID blockDim) (* struct-size warpID warpSize)))
-   (define gid (get-global-threadId threadId blockID))
-   (global-to-local
-    I
-    I-cached
-    (x-y-z 1)
-    offset
-    (x-y-z (* warpSize struct-size))
-    #f)
-   (define localId (get-idInWarp threadId))
-  (pretty-display `(threadId ,threadId))
-   (for/bounded
-    ((i struct-size))
-    (let* ((index
-            (@int
-             (extract
-              (bvlshr
-               (bvshl
-                (bvsub
-                 (extract (@dup (bv 1 BW)) (bv 5 BW))
-                 (bvsub (@dup (@bv i)) (@bv localId)))
-                (bv 5 BW))
-               (bv 5 BW))
-              log-m)))
-           (lane
-            (@int
-             (bvadd
-              (bvlshr
-               (bvadd
-                (bvshl (@bv localId) (bv 3 BW))
-                (bvshl (@bv localId) (bv 3 BW)))
-               (bv 2 BW))
-              (extract
-               (bvadd
-                (bvsub (@dup (@bv i)) (@dup (bv 1 BW)))
-                (bvlshr (@bv localId) (bv 3 BW)))
-               (bv 2 BW)))))
-           (x (shfl (get I-cached index) lane))
-           (index-o
-            (@int
-             (extract
-              (bvadd
-               (bvlshr (@bv localId) (bv 3 BW))
-               (bvsub (@dup (@bv i)) (@dup (bv 1 BW))))
-              log-m))))
-      (pretty-display `(i ,i ,(print-vec localId)))
-      (pretty-display `(index ,(print-vec index)))
-      (pretty-display `(lane ,(print-vec lane)))
-      (pretty-display `(index-o ,(print-vec index-o)))
-      (unique-warp (modulo lane warpSize))
-      (set O-cached index-o x)))
-   (local-to-global
-    O-cached
-    O
-    (x-y-z 1)
-    offset
-    (x-y-z (* warpSize struct-size))
-    #f))
 
 ;; struct size = 4
 ;; warpSize 2 4: > 1 hr
@@ -244,17 +175,12 @@
                       (x-y-z (* warpSize struct-size)) #f)
   )
 
-;; struct-size 5, const 32, constraint col+row permute, distinct?: 3/10 s
-;; struct-size 3, const ??, constraint col+row permute, distinct?: 12 s
-;; struct-size 5, const ??, constraint col+row permute, distinct?: 4/11 s
-;; struct-size 7, const ??, constraint col+row permute, distinct?: 5/19 s
 
 ;; newest fan sketch
 ;; 2: 1/10 | 2/16
 ;; 3: 3/17 | 63/191
 ;; 4:      | 33/49
 ;; 5:      | 16/129
-
 (define (AOS-load-sketch-fan threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix-local (x-y-z struct-size)))
   (define O-cached (create-matrix-local (x-y-z struct-size)))
@@ -301,26 +227,11 @@
                       (x-y-z (* warpSize struct-size)) #f)
   )
 
-;; load/store with shuffle together
-;; shuf + shuf
-;; struct-size 4: 228/9542 s
-;; shuf + shuf-send
-;; struct-size 4: 507/12017 s (3 hr)
-
-;; sketch with fan
-;; struct-size 4, const ??: 14/200
-;; struct-size 4, const ??: 25/176
-;; struct-size 5, const ??: 21/60
-;; struct-size 7, const ??: 19/97
-
-
-;; newest fan
-;; 2: 6/175
-;; 3: 77/19530
-;; 4: 13/391
-;; 5: 62/597
-;; with 1 for conf-fw
-;; 3: 12/236
+;; BW=8, const=??
+;; 2: 6/39
+;; 3: 6/30
+;; 4: 8/116
+;; 5: 35/110
 (define (AOS-loadsh-sketch-fan threadId blockID blockDim I O a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
@@ -332,28 +243,22 @@
   (global-to-local I I-cached
                  (x-y-z 1)
                  offset
-                 (x-y-z (* warpSize struct-size)) #f)
+                 (x-y-z (* warpSize struct-size)) #f #:round struct-size)
 
   (define indices (make-vector struct-size))
   (define indices-o (make-vector struct-size))
   (define localId (get-idInWarp threadId))
 
   (for ([i struct-size])
-    (let* (#;[lane1 (fan localId warpSize 1 warpSize warpSize 1
-                       i struct-size 0 struct-size)]
-           [lane1 (fan localId warpSize (??) (??) (??) (choose 1 -1)
+    (let* ([lane1 (fan localId warpSize (??) (??) (??) (choose 1 -1)
                        i struct-size (??) (??))]
            [x (shfl (get I-cached (@dup i)) lane1)])
       (set temp (@dup i) x) 
       ))
 
   (for ([i struct-size])
-    (let* (#;(index (fan i 5 3 5 5 1
-                       localId warpSize 2 warpSize))
-           [index (fan i struct-size (??) (??) (??) (choose 1 -1)
+    (let* ([index (fan i struct-size (??) (??) (??) (choose 1 -1)
                        localId warpSize (??) (??))]
-           #;(lane2 (fan localId 32 13 32 32 1
-                       i 5 19 5))
            [lane2 (fan localId warpSize (??) (??) (??) (choose 1 -1)
                        i struct-size (??) (??))]
            [x (shfl-send (get temp index) lane2)])
@@ -363,12 +268,12 @@
   (local-to-global O-cached O
                       (x-y-z 1)
                       offset
-                      (x-y-z (* warpSize struct-size)) #f)
+                      (x-y-z (* warpSize struct-size)) #f #:round struct-size)
   )
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-load-test w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-loadsh-sketch-fan w)])
       (pretty-display `(test ,w ,ret))))
   )
 ;(test)
