@@ -357,6 +357,7 @@
   )
 
 (define (global-cost pattern sizes)
+  (pretty-display `(sizes ,sizes))
   (define pattern-x (get-x pattern))
   (define my-cost
     (if (= pattern-x 1)
@@ -596,7 +597,7 @@
             [I-reg-len-y (vector-length (vector-ref I-reg 0))]
             [I-reg-len-x (vector-length (vector-ref (vector-ref I-reg 0) 0))])
        (for ([warp (quotient blockSize warpSize)])
-         ;(pretty-display `(warp ,warp ,offset))
+         ;(pretty-display `(>>> warp ,warp ,offset))
          (let ([offset-x (if (vector? offset)
                              (get-x (vector-ref offset (* warp warpSize)))
                              (vector-ref (get-x offset) (* warp warpSize)))]
@@ -606,20 +607,22 @@
            ;(pretty-display `(offset-x ,offset-x))
            (for/bounded ([it-y iter-y])
            (for/bounded ([it-x iter-x])
+             (pretty-display `(iter ,warp ,it-y ,it-x))
              (for ([t warpSize])
                (let ([t-from (shfl t (+ (* it-y iter-x) it-x))])
                (for/bounded ([my-y stride-y])
                (for/bounded ([my-x stride-x])
                  ;(pretty-display `(loop ,warp ,it-x ,t ,my-x))
                  (let ([global-y (+ offset-y
-                                    (* size-y warp) (* it-y warp-shape-y stride-y)
+                                    (* it-y warp-shape-y stride-y) ;; TODO (* size-y warp)
                                     (* (quotient t-from warp-shape-x) stride-y) my-y)]
                        [global-x (+ offset-x
-                                    (* size-x warp) (* it-x warp-shape-x stride-x)
+                                    (* it-x warp-shape-x stride-x) ;; TODO (* size-x warp)
                                     (* (modulo t-from warp-shape-x) stride-x) my-x)]
                        [local-y (+ my-y (* it-y stride-y))]
                        [local-x (+ my-x (* it-x stride-x))]
                        )
+                   (pretty-display `(info ,warp ,t ,global-y ,global-x ,local-y ,local-x))
                  (when (and (< global-y I-len-y) (< global-x I-len-x)
                             (< local-x I-reg-len-x) (< local-y I-reg-len-y)
                             )
