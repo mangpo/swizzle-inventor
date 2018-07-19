@@ -3,30 +3,40 @@
 (require "codegen.rkt")
 
 (define func
-  '(define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
-   (define I-cached (create-matrix-local (x-y-z 2)))
-   (define warpID (get-warpId threadId))
-   (define offset (+ (* blockID blockDim) (* warpID warpSize)))
-   (define gid (get-global-threadId threadId blockID))
-   (global-to-local
-    I
-    I-cached
-    (x-y-z 1)
-    (+ (* blockID blockDim) (* warpID warpSize))
-    (x-y-z (+ warpSize 2))
-    #f
-    #:round
-    2)
-   (define localId (get-idInWarp threadId))
-   (define o (create-accumulator (list +) (lambda (x) (/ x 3)) blockDim))
-   (for
-    ((i 3))
-    (let* ((index (ite (>= localId 1) 0 (ite (>= localId 2) 1 2)))
-           (index2 (ite (>= i 1) 0 (ite (>= i 2) 1 2)))
-           (lane i)
-           (x (shfl (get I-cached index index2) lane)))
-      (accumulate o x #:pred (= (@dup i) (@dup i)))))
-   (reg-to-global (accumulate-final o) O gid)))
+  '(define (conv2d threadId blockID blockDim I O I-sizes O-sizes)
+  (define gid (+ (* blockID blockDim) threadId))
+  (define gx (get-x gid))
+  (define gy (get-y gid))
+  (define id (modulo (get-x threadId) warpSize))
+  (define warp-col (modulo id W))
+  (define warp-row (quotient id W))
+
+  (define offset-x (* (quotient gx warpSize) W))
+  (define offset-y (* gy H))
+
+  (define I-cached (create-matrix-local (x-y-z 2 2)))
+  (global-to-local I I-cached
+                 (x-y-z 1 1)
+                 (lov2vol (x-y-z offset-x offset-y))
+                 (+ warp-shape 2) #f
+                 #:warp-shape (x-y-z W H) #:round (x-y-z 2 2) #:size N)
+
+  (define o (create-accumulator (list +) (lambda (x) (/ x 9)) blockDim))
+  
+  (for* ([ky 3] [kx 3])
+    (let* ([index-j (ite (< warp-row ky) 1 0)]
+           [index-i (ite (< warp-col kx) 1 0)]
+           [lane-x (fan warp-col W 1 W W 1
+                        kx 3 1 3)]
+           [lane-y (fan warp-row H 1 H H 1
+                        ky 3 1 3)]
+           [lane (+ (* lane-y W) lane-x)]
+           [x (shfl (get I-cached index-i index-j) lane)])
+      (accumulate o x)
+      ))
+  (reg-to-global (accumulate-final o) O
+                 (lov2vol (x-y-z (+ offset-x warp-col) (+ offset-y warp-row))) #:size (- N 2))
+  ))
   
 
 (print-cuda (racket2cuda func 1))

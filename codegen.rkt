@@ -299,6 +299,28 @@
     [(list 'for (list (list vs ls) ...) body)
      (for ([v vs])
        (hash-set! env v 1))
+     (define inits (list))
+     (define conds (list))
+     (define incs (list))
+
+     (for ([v vs] [l ls])
+       (let* ([x (sanitize v)]
+              [b (sanitize l)])
+         (set! inits (cons (format "~a = 0" x) inits))
+         (set! conds (cons (format "(~a < 0)" x) conds))
+         (set! incs (cons (format "~a++" x) incs))))
+     (define start
+       (format-indent "for(int ~a; ~a; ~a) {" (string-join inits ",") (string-join conds "&&") (string-join incs ",")))
+     (inc-indent)
+     (define body-ret (convert-statement body))
+     (dec-indent)
+     (define end (format-indent "}"))
+     (list start body-ret end)
+     ]
+
+    [(list 'for* (list (list vs ls) ...) body)
+     (for ([v vs])
+       (hash-set! env v 1))
      (append
       (for/list ([v vs] [l ls])
         (let* ([x (sanitize v)]
@@ -419,7 +441,7 @@
     [(list 'get matrix idxs ...)
      (define ites (map ite-const? idxs))
      (define ite-n (count identity ites))
-     (pretty-display `(get ,temps ,ite-n))
+     ;(pretty-display `(get ,temps ,ite-n))
 
      (cond
        [(> ite-n 0)
