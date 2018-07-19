@@ -357,7 +357,6 @@
   )
 
 (define (global-cost pattern sizes)
-  (pretty-display `(sizes ,sizes))
   (define pattern-x (get-x pattern))
   (define my-cost
     (if (= pattern-x 1)
@@ -607,7 +606,7 @@
            ;(pretty-display `(offset-x ,offset-x))
            (for/bounded ([it-y iter-y])
            (for/bounded ([it-x iter-x])
-             (pretty-display `(iter ,warp ,it-y ,it-x))
+             ;(pretty-display `(iter ,warp ,it-y ,it-x))
              (for ([t warpSize])
                (let ([t-from (shfl t (+ (* it-y iter-x) it-x))])
                (for/bounded ([my-y stride-y])
@@ -622,7 +621,7 @@
                        [local-y (+ my-y (* it-y stride-y))]
                        [local-x (+ my-x (* it-x stride-x))]
                        )
-                   (pretty-display `(info ,warp ,t ,global-y ,global-x ,local-y ,local-x))
+                   ;(pretty-display `(info ,warp ,t ,global-y ,global-x ,local-y ,local-x))
                  (when (and (< global-y I-len-y) (< global-x I-len-x)
                             (< local-x I-reg-len-x) (< local-y I-reg-len-y)
                             )
