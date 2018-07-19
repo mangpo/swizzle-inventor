@@ -155,13 +155,17 @@
      (convert-statement (list 'accumulate acc l '#:pred #t))
      ]
 
-    [(list 'accumulate acc (list 'list l ...) '#:pred pred*)
+    [(list 'accumulate acc l* '#:pred pred*)
      (define pred (simplify pred*))
      (cond
        [(equal? pred #f)
         (list)]
 
        [else
+        (define l
+          (match l*
+            [(list 'list x ...) x]
+            [_ l*]))
         (define op-list (car (hash-ref accumulators acc)))
         (define res (accumulate l (cdr (reverse op-list))))
         (define st (format "~a ~a= ~a;" acc (last op-list) res))
@@ -398,6 +402,13 @@
      (values 1 (lambda (i) (format "__shfl_sync(FULL_MASK, ~a, ~a)" (e-f 0) (lane-f 0))))
      ]
 
+    #;[(list 'get matrix idxs1 ... (list 'ite c1 e1 (list 'ite c2 e2 e3)) idxs2 ...)
+     (define-values (c-n c-f) (convert-expr c1))
+     (define-values (geta-n geta-f) (convert-expr (append `(get ,matrix) idxs1 `(,e1) idxs2)))
+     (define-values (getb-n getb-f) (convert-expr (append `(get ,matrix) idxs1 `(ite ,c2 ,e2 ,e3) idxs2)))
+     (values 1 (lambda (i) (format "~a? ~a: ~a" (c-f 0) (geta-f 0) (getb-f 0))))
+     ]
+
     [(list 'get matrix idxs1 ... (list 'ite c a b) idxs2 ...)
      (define-values (c-n c-f) (convert-expr c))
      (define-values (geta-n geta-f) (convert-expr (append `(get ,matrix) idxs1 `(,a) idxs2)))
@@ -408,12 +419,16 @@
     [(list 'get matrix idxs ...)
      (define ites (map ite-const? idxs))
      (define ite-n (count identity ites))
+     (pretty-display `(get ,temps ,ite-n))
 
      (cond
-       [(= ite-n 1)
-        (define index (index-of ites #t))
-        (define e (hash-ref temps (list-ref idxs index)))
-        (convert-expr (append `(get ,matrix) (take idxs index) `(,e) (drop idxs (add1 index))))
+       [(> ite-n 0)
+        (define new-idxs
+          (for/list ([idx idxs])
+            (if (ite-const? idx)
+                (hash-ref temps idx)
+                idx)))
+        (convert-expr (append `(get ,matrix) new-idxs))
         ]
 
        [else
@@ -538,7 +553,8 @@
   (if (hash-has-key? temps e)
       (let ([v (hash-ref temps e)])
         (match v
-          [(list 'ite c (? number?) (? number?)) #t]
+          [(list 'ite _ _ _) #t]
+          ;[(list 'ite c (? number?) (? number?)) #t]
           [_ #f]))
       #f))
 
@@ -757,6 +773,7 @@
        [(list '<= x (list '+ (? negative?) x)) #f]
        [(list '< x (list '+ (? negative?) x)) #f]
        [new-expr new-expr])]
+    [(list '@dup x) (simplify x)]
     [_
      (if (hash-has-key? env-consts e)
          (hash-ref env-consts e)

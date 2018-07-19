@@ -561,38 +561,23 @@
        (for ([warp (quotient blockSize warpSize)])
          (let ([offset-x (if (vector? offset)
                              (get-x (vector-ref offset (* warp warpSize)))
-                             (vector-ref (get-x offset) (* warp warpSize)))]
-               [inc-x 0])
+                             (vector-ref (get-x offset) (* warp warpSize)))])
            ;(pretty-display `(offset-x ,offset-x))
-           #;(for/bounded ([it iter-x])
-             (for ([t warpSize])
-               (for/bounded ([my-i stride-x])
-                 ;(pretty-display `(loop ,warp ,it ,t ,my-i))
-                 (when (and (< inc-x size-x)
-                            (< (+ offset-x inc-x) I-len)
-                            (< (+ my-i (* it stride-x)) I-reg-len)
-                            )
-                   (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
-                        (+ my-i (* it stride-x)) ;; local index
-                        (vector-ref I (+ offset-x inc-x)))
-                   ;(pretty-display `(loop-true))
-                   )
-                 (set! inc-x (+ inc-x 1)))))
-
            (for/bounded ([it iter-x])
              (for ([t warpSize])
                (let ([t-from (shfl t it)])
-               (for/bounded ([my-i stride-x])
-                 ;(pretty-display `(loop ,warp ,it ,t ,my-i))
-                 (when (and (< inc-x size-x)
-                            (< (+ offset-x inc-x) I-len)
-                            (< (+ my-i (* it stride-x)) I-reg-len)
-                            )
-                   (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
-                        (+ my-i (* it stride-x)) ;; local index
-                        (vector-ref I (+ offset-x (* it stride-x warpSize) (* stride-x t-from) my-i)))
-                   ;(pretty-display `(loop-true))
-                   )))))
+                 (for/bounded ([my-i stride-x])
+                   ;(pretty-display `(loop ,warp ,it ,t ,my-i)) ;; (loop 1 1 0 0)
+                   (let ([global-x (+ offset-x (* it stride-x warpSize) (* stride-x t-from) my-i)]
+                         [local-x (+ my-i (* it stride-x))])
+                     (when (and (< global-x I-len)
+                                (< local-x I-reg-len)
+                                )
+                       (vector-set! (vector-ref I-reg (+ t (* warp warpSize))) ;; thread in a block
+                                    local-x ;; local index
+                                    (vector-ref I global-x))
+                       ;(pretty-display `(loop-true))
+                   ))))))
            )))
      ]
 

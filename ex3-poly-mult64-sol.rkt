@@ -68,7 +68,71 @@
   (reg-to-global acc2 C (+ block-offset (@dup (x-y-z n 0)) threadId))
   )
 
-(define (mult64-opt threadId blockID blockDim A B C n)
+(define (mult32-rc threadId blockID blockDim A B C n)
+  (define globalID (+ threadId (* blockID blockDim)))
+  (define warpId (get-warpId threadId))
+  (define a-cached 0)
+  (define b-cached 0)
+  (global-to-reg A a-cached globalID #:size (x-y-z n))
+  (global-to-reg B b-cached globalID #:size (x-y-z n))
+  
+  (define tidx (get-idInWarp threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i n])
+    (let* ([lane-a (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize)]
+           [lane-b (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize (- warpSize 1) warpSize)]
+           [a (shfl a-cached lane-a)]
+           [b (shfl b-cached lane-b)]
+          )
+      (accumulate acc1 (list a b) #:pred (<= i tidx))
+      (accumulate acc2 (list a b) #:pred (> i tidx))
+      ))
+
+  (reg-to-global acc1 C globalID #:size (x-y-z (* 2 n)))
+  (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
+  )
+
+(define (mult32-shared threadId blockID blockDim A B C n)
+  (define warpId (get-warpId threadId))
+  (define-shared a-cached (create-matrix (x-y-z warpSize Y_THREADS)))
+  (define-shared b-cached (create-matrix (x-y-z warpSize Y_THREADS)))
+  (define block-offset (* blockID blockDim))
+  (define globalID (+ threadId (* blockID blockDim)))
+  (global-to-shared A a-cached
+                    (x-y-z 1 1) ;; stride
+                    block-offset
+                    blockDim #:size warpSize)
+  (global-to-shared B b-cached
+                    (x-y-z 1 1) ;; stride
+                    block-offset
+                    blockDim #:size warpSize)
+  
+  (define tidx (get-x threadId))
+  (define tidy (get-y threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i n])
+    (let* ([lane-a (fan tidx warpSize 0 warpSize warpSize 1
+                        i warpSize 1 warpSize)]
+           [lane-b (fan tidx warpSize 1 warpSize warpSize 1
+                        i warpSize -1 warpSize)]
+           [a (get a-cached lane-a tidy)]
+           [b (get b-cached lane-b tidy)]
+          )
+      (accumulate acc1 (list a b) #:pred (<= i tidx))
+      (accumulate acc2 (list a b) #:pred (> i tidx))
+      ))
+
+  (reg-to-global acc1 C globalID #:size (x-y-z (* 2 n)))
+  (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
+  )
+
+(define (mult64-rc threadId blockID blockDim A B C n)
   (define globalID (+ threadId (* blockID blockDim)))
   (define a-cached (create-matrix-local (x-y-z 2 1)))
   (define b-cached (create-matrix-local (x-y-z 2 1)))
@@ -177,7 +241,7 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size mult-spec mult64-shared w (* 2 w))])
+    (let ([ret (run-with-warp-size mult-spec mult32-shared w (* 1 w))])
       (pretty-display `(test ,w ,ret))
       (pretty-display `(cost ,(get-cost)))
       ))

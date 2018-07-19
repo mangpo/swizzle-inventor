@@ -29,7 +29,7 @@
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
 (provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan ?fan-easy
-         ?cond ?ite ?const ?const32
+         ?cond ?cond-easy ?ite ?const ?const32
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
@@ -72,6 +72,13 @@
           (?lane x ... [c ...] (- depth 1))
           (?lane x ... [c ...] (- depth 1)))))
 
+(define-synthax ?cond-easy
+  ([(?cond-easy x ...)
+    (choose #t #f
+            ((choose < <= > >= =) (choose x ...) (choose x ...)))]
+
+   ))
+
 (define-synthax ?cond
   ([(?cond x ... #:mod mod)
     (choose #t #f
@@ -87,19 +94,19 @@
    ))
 
 (define-synthax ?fan-easy
-  ([(?fan eid n k m)
+  ([(?fan-easy eid n k m)
     (fan eid n (??) n n (choose 1 -1)
          k m (??) m #:offset (??))]
 
-   [(?fan eid n k m #:fw conf-fw)
+   [(?fan-easy eid n k m #:fw conf-fw)
     (fan eid n (??) n n conf-fw
          k m (??) m #:offset (??))]
 
-   [(?fan eid n k m [c ...])
+   [(?fan-easy eid n k m [c ...])
     (fan eid n (?const c ...) n n (choose 1 -1)
          k m (?const c ...) m #:offset (?const m c ...))]
 
-   [(?fan eid n k m [c ...] #:fw conf-fw)
+   [(?fan-easy eid n k m [c ...] #:fw conf-fw)
     (fan eid n (?const c ...) n n conf-fw
          k m (?const c ...) m #:offset (?const m c ...))]
    )
