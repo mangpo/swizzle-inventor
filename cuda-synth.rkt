@@ -81,7 +81,8 @@
              ))]
    [(?cond x ...)
     (choose #t #f
-            ((choose < <= > >= =) (choose x ...) (choose x ...)))]
+            ((choose < <= > >= =) (choose x ...)
+                                  ((choose + -) (?const warpSize) (choose x ...))))]
 
    ))
 

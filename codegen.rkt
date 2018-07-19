@@ -13,9 +13,10 @@
 (define env (make-hash))
 (define matrix-size (make-hash))
 (define cuda-vars (make-hash))
-(define env-consts (hash 'struct-size 3 'warpSize 32))
+(define env-consts (hash 'struct-size 3 'warpSize 32 'n 64))
 (define accumulators (make-hash))
 (define acc-replace (make-hash))
+(define temps (make-hash))
 
 (define (cuda-var? v)
   (hash-has-key? cuda-vars v))
@@ -36,6 +37,8 @@
 (define (sanitize x)
   (cond
     [(number? x) x]
+    [(equal? x #t) 1]
+    [(equal? x #f) 0]
     [(string? x) (string-replace x "-" "_")]
     [else (string-replace (symbol->string x) "-" "_")]))
 
@@ -152,7 +155,8 @@
      (convert-statement (list 'accumulate acc l '#:pred #t))
      ]
 
-    [(list 'accumulate acc (list 'list l ...) '#:pred pred)
+    [(list 'accumulate acc (list 'list l ...) '#:pred pred*)
+     (define pred (simplify pred*))
      (cond
        [(equal? pred #f)
         (list)]
@@ -305,18 +309,23 @@
      ]
 
     [(list let? (list (list vs es) ...) body ...)
+     (define ret
      (append
       (for/list ([e es] [v vs])
+        (let ([e (simplify e)])
         (let-values ([(n f) (convert-expr e)])
           (hash-set! env v n)
+          (hash-set! temps v e)
           (cond
             [(= n 1)
              (format-indent "int ~a = ~a;" (sanitize v) (f 0))]
            [else
             (for/list ([i n]) (format-indent "int ~a~a = ~a;" (sanitize v) i (f i)))])
-          ))
+          )))
       (for/list ([st body])
-        (convert-statement st)))
+        (convert-statement st))))
+     (for ([v vs]) (hash-remove! temps v))
+     ret
      ]
 
     [(list 'set matrix idxs ... v)
@@ -329,21 +338,21 @@
     
     ))
 
-(define (convert-global-to-local name A B round stride offset lsize transpose warp-shape local-size
+(define (convert-global-to-local name A B round stride offset load-size transpose warp-shape local-size
                                  #:shfl [shfl #f] #:size [gsize 1])
   (define-values (stride-n stride-f) (convert-expr stride))
   (define-values (offset-n offset-f) (convert-expr offset))
-  (define-values (lsize-n lsize-f) (convert-expr lsize))
+  ;(define-values (lsize-n lsize-f) (convert-expr local-size))
   (define-values (shape-n shape-f) (convert-expr warp-shape))
   (define-values (round-n round-f) (convert-expr round))
-  (define d (max stride-n offset-n lsize-n))
+  (define d (max stride-n offset-n))
   (define size-str "")
   (when (> d 1)
     (define-values (gsize-n gsize-f) (convert-expr gsize))
     (define l
       (append
        (for/list ([i (sub1 d)]) (gsize-f i))
-       (for/list ([i (sub1 d)]) (lsize-f i))))
+       (for/list ([i (sub1 d)]) (format "~a" (list-ref local-size i)))))
     (set! size-str (format ",~a" (string-join l ",")))
     )
   
@@ -389,13 +398,32 @@
      (values 1 (lambda (i) (format "__shfl_sync(FULL_MASK, ~a, ~a)" (e-f 0) (lane-f 0))))
      ]
 
-    [(list 'get matrix idxs ...)
-     (define str-list
-       (for/list ([idx idxs])
-         (let-values ([(n idx-f) (convert-expr idx)])
-           (idx-f 0))))
+    [(list 'get matrix idxs1 ... (list 'ite c a b) idxs2 ...)
+     (define-values (c-n c-f) (convert-expr c))
+     (define-values (geta-n geta-f) (convert-expr (append `(get ,matrix) idxs1 `(,a) idxs2)))
+     (define-values (getb-n getb-f) (convert-expr (append `(get ,matrix) idxs1 `(,b) idxs2)))
+     (values 1 (lambda (i) (format "~a? ~a: ~a" (c-f 0) (geta-f 0) (getb-f 0))))
+     ]
 
-     (values 1 (lambda (i) (format "~a~a" (sanitize matrix) (dims-str str-list))))
+    [(list 'get matrix idxs ...)
+     (define ites (map ite-const? idxs))
+     (define ite-n (count identity ites))
+
+     (cond
+       [(= ite-n 1)
+        (define index (index-of ites #t))
+        (define e (hash-ref temps (list-ref idxs index)))
+        (convert-expr (append `(get ,matrix) (take idxs index) `(,e) (drop idxs (add1 index))))
+        ]
+
+       [else
+        (define str-list
+          (for/list ([idx idxs])
+            (let-values ([(n idx-f) (convert-expr idx)])
+              (idx-f 0))))
+        
+        (values 1 (lambda (i) (format "~a~a" (sanitize matrix) (dims-str str-list))))]
+       )
      ]
 
     [(list 'fan j n* cj* dj* group* conf-fw
@@ -446,21 +474,43 @@
                            (f 0)))
      ]
 
-    [(list op args ...)
-     (define max-d 1)
-     (define fs 
-       (for/list ([arg args])
-         (let-values ([(n f) (convert-expr arg)])
-           (when (> n max-d) (set! max-d n))
-           f)))
+    [(list 'ite c a b)
+     (define new-ite (simplify expr))
 
-     (values max-d
-             (lambda (i)
-               (format "(~a)"
-                       (string-join
-                        (for/list ([f fs])
-                          (f i))
-                        (convert-op op)))))
+     (match new-ite
+       [(list 'ite _ _ _)
+        (define-values (c-n c-f) (convert-expr c))
+        (define-values (a-n a-f) (convert-expr a))
+        (define-values (b-n b-f) (convert-expr b))
+        (define max-d (max a-n b-n c-n))
+        
+        (values max-d
+                (lambda (i)
+                  (format "~a? ~a: ~a" (c-f i) (a-f i) (b-f i))))]
+       [else (convert-expr new-ite)])
+     ]
+
+    [(list op args ...)
+     (define new-expr (simplify expr))
+
+     (match new-expr
+       [(list op args ...)
+        (define max-d 1)
+        (define fs 
+          (for/list ([arg args])
+            (let-values ([(n f) (convert-expr arg)])
+              (when (> n max-d) (set! max-d n))
+              f)))
+        
+        (values max-d
+                (lambda (i)
+                  (format "(~a)"
+                          (string-join
+                           (for/list ([f fs])
+                             (f i))
+                           (convert-op op)))))]
+
+       [v (convert-expr v)])
      ]
 
 
@@ -483,6 +533,14 @@
        [else (values d (lambda (i) (format "~a~a" (sanitize v) i)))])
      ]
     ))
+
+(define (ite-const? e)
+  (if (hash-has-key? temps e)
+      (let ([v (hash-ref temps e)])
+        (match v
+          [(list 'ite c (? number?) (? number?)) #t]
+          [_ #f]))
+      #f))
 
 (define (accumulate vals ops)
   (cond
@@ -605,6 +663,7 @@
     ['modulo "%"]
     ['bvand "&"]
     ['bvxor "^"]
+    [(? string?) op]
     [x (symbol->string x)]))
 
 (define (dims-str idxs)
@@ -628,6 +687,18 @@
        [else `(+ ,x ,y)])
      ]))
 
+(define (@-- xs)
+  (cond
+    [(= (length xs) 1) (car xs)]
+    [else
+     (define y (@++ (cdr xs)))
+     (define x (car xs))
+     (cond
+       [(and (equal? x 0) (number? y)) (- 0 y)]
+       [(equal? y 0) x]
+       [else `(- ,x ,y)])
+     ]))
+
 (define (@** xs)
   (define ret
   (cond
@@ -646,6 +717,7 @@
   )
 
 (define-syntax-rule (@+ x ...) (@++ (list x ...)))
+(define-syntax-rule (@- x ...) (@-- (list x ...)))
 (define-syntax-rule (@* x ...) (@** (list x ...)))
 
 (define (@quotient x y)
@@ -658,4 +730,36 @@
   (cond
     [(equal? y 1) 0]
     [else `(modulo ,x ,y)]))
+
+(define (simplify e)
+  (match e
+    [(list 'ite c a b)
+     (define new-c (simplify c))
+     (cond
+       [(equal? new-c #t) (simplify a)]
+       [(equal? new-c #f) (simplify b)]
+       [else `(ite ,new-c ,(simplify a) ,(simplify b))])]
+    [(list '+ args ...) (@++ (for/list ([x args]) (simplify x)))]
+    [(list '- args ...) (@-- (for/list ([x args]) (simplify x)))]
+    [(list '* args ...) (@** (for/list ([x args]) (simplify x)))]
+    [(list 'quotient x y) (@quotient (simplify x) (simplify y))]
+    [(list 'modulo x y) (@modulo (simplify x) (simplify y))]
+    [(list op a b)
+     (match `(,op ,(simplify a) ,(simplify b))
+       [(list '= x x) #t]
+       [(list '>= x x) #t]
+       [(list '<= x x) #t]
+       [(list '> x x) #f]
+       [(list '< x x) #f]
+       [(list '= x (list '+ (? number?) x)) #f]
+       [(list '<= x (list '+ (? positive?) x)) #t]
+       [(list '< x (list '+ (? positive?) x)) #t]
+       [(list '<= x (list '+ (? negative?) x)) #f]
+       [(list '< x (list '+ (? negative?) x)) #f]
+       [new-expr new-expr])]
+    [_
+     (if (hash-has-key? env-consts e)
+         (hash-ref env-consts e)
+         e)
+     ]))
 

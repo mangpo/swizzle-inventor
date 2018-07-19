@@ -545,7 +545,8 @@
 (define (global-to-local I I-reg pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
                          #:round [round 1]
-                         #:shfl [shfl (lambda (tid k) tid)])
+                         #:shfl [shfl (lambda (tid k) tid)]
+                         #:size [gsize #f])
   (global-cost pattern sizes)
   (assert (all? (@<= sizes (@* warp-shape pattern round)) true?))
   (assert (all? (@> sizes (@* warp-shape pattern (@- round 1))) true?))
@@ -651,7 +652,8 @@
 (define (local-to-global I-reg I pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
                          #:round [round 1]
-                         #:shfl [shfl (lambda (tid k) tid)])
+                         #:shfl [shfl (lambda (tid k) tid)]
+                         #:size [gsize #f])
   (begin
     (if transpose
         (global-cost (reverse pattern) (reverse sizes))
