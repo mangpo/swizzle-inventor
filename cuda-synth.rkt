@@ -28,7 +28,7 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan ?fan-easy
          ?cond ?ite ?const ?const32
          ?warp-size ?warp-offset
          print-forms choose
@@ -85,6 +85,25 @@
                                   ((choose + -) (?const warpSize) (choose x ...))))]
 
    ))
+
+(define-synthax ?fan-easy
+  ([(?fan eid n k m)
+    (fan eid n (??) n n (choose 1 -1)
+         k m (??) m #:offset (??))]
+
+   [(?fan eid n k m #:fw conf-fw)
+    (fan eid n (??) n n conf-fw
+         k m (??) m #:offset (??))]
+
+   [(?fan eid n k m [c ...])
+    (fan eid n (?const c ...) n n (choose 1 -1)
+         k m (?const c ...) m #:offset (?const m c ...))]
+
+   [(?fan eid n k m [c ...] #:fw conf-fw)
+    (fan eid n (?const c ...) n n conf-fw
+         k m (?const c ...) m #:offset (?const m c ...))]
+   )
+  )
 
 (define-synthax ?fan
   ([(?fan eid n k m)

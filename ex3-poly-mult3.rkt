@@ -233,6 +233,8 @@
 
 ;; 6 statements: 3/7
 ;; 8 statements: 2/22
+;; 16 statements, ?const: 8/2410
+;; 16 statements, ?const, ?fan-easy: 8/849
 (define (mult64-sketch threadId blockID blockDim A B C n)
   (define globalID (+ threadId (* blockID blockDim)))
   (define a-cached (create-matrix-local (x-y-z 2 1)))
@@ -257,13 +259,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize #;(choose warpSize (??))])
-    (let* ([lane-a1 (?fan tidx warpSize
+    (let* ([lane-a1 (?fan-easy tidx warpSize
                           i warpSize [] #:fw 1)]
-           [lane-a2 (?fan tidx warpSize
+           [lane-a2 (?fan-easy tidx warpSize
                           i warpSize [] #:fw 1)]
-           [lane-b1 (?fan tidx warpSize
+           [lane-b1 (?fan-easy tidx warpSize
                           i warpSize [] #:fw 1)]
-           [lane-b2 (?fan tidx warpSize
+           [lane-b2 (?fan-easy tidx warpSize
                           i warpSize [] #:fw 1)]
            [idx-a1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-a2 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
