@@ -515,9 +515,9 @@
       ))
 
   ;; for load int2
-  (define index1 (lov2vof (x-y-z (modulo (* 2 tidx) warpSize) tidy)))
+  (define index1 (lov2vol (x-y-z (modulo (* 2 tidx) warpSize) tidy)))
   (define index2 (+ (x-y-z 1 0) index1))
-  (define half-offset (lov2vof (x-y-z (* warpSize (quotient (* 2 tidx) warpSize)) (@dup 0))))
+  (define half-offset (lov2vol (x-y-z (* warpSize (quotient (* 2 tidx) warpSize)) (@dup 0))))
 
   (pretty-display `(index ,block-offset ,half-offset ,index1 ,(+ block-offset half-offset index1)))
   (reg-to-global-update accumulate-merge acc1 C (+ block-offset half-offset index1))

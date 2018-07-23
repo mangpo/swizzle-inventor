@@ -307,7 +307,7 @@
        (let* ([x (sanitize v)]
               [b (sanitize l)])
          (set! inits (cons (format "~a = 0" x) inits))
-         (set! conds (cons (format "(~a < 0)" x) conds))
+         (set! conds (cons (format "(~a < ~a)" x b) conds))
          (set! incs (cons (format "~a++" x) incs))))
      (define start
        (format-indent "for(int ~a; ~a; ~a) {" (string-join inits ",") (string-join conds "&&") (string-join incs ",")))
