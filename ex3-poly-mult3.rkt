@@ -68,18 +68,14 @@
   (reg-to-global acc2 C (+ block-offset (@dup (x-y-z n 0)) threadId))
   )
 
-;; conf-fw options: 740/1172
-;; conf-fw=1: 28/503
-(define (mult32-sketch threadId blockID blockDim A B C n)
-  (define block-offset (* blockID blockDim))
-  (define globalID (+ threadId block-offset))
-  (define warpId (get-warpId threadId))
+(define (mult32 threadId blockID blockDim A B C n)
+  (define globalID (+ threadId (* blockID blockDim)))
   (define a-cached 0)
   (define b-cached 0)
   (global-to-reg A a-cached globalID #:size (x-y-z n))
   (global-to-reg B b-cached globalID #:size (x-y-z n))
   
-  (define tidx (get-idInWarp threadId))
+  (define tidx (modulo (get-x threadId) 32))
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
@@ -88,19 +84,41 @@
                         i warpSize 1 warpSize)]
            [lane-b (fan tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
-           #;[lane-a (fan tidx warpSize (??) (??) (??) 1
-                        i warpSize (??) (??))]
-           #;[lane-b (fan tidx warpSize (??) (??) (??) 1
-                        i warpSize (??) (??))]
            [a (shfl a-cached lane-a)]
            [b (shfl b-cached lane-b)]
           )
-      (accumulate acc1 (list a b) #:pred (<= i tidx) #;(?cond tidx (@dup i)))
-      (accumulate acc2 (list a b) #:pred (> i tidx) #;(?cond tidx (@dup i)))
+      (accumulate acc1 (list a b) #:pred (<= (@dup i) tidx))
+      (accumulate acc2 (list a b) #:pred (> (@dup i) tidx))
       ))
 
-  (reg-to-global acc1 C (+ block-offset threadId) #:size (x-y-z (* 2 n)))
-  (reg-to-global acc2 C (+ block-offset (@dup (x-y-z n 0)) threadId) #:size (x-y-z (* 2 n)))
+  (reg-to-global acc1 C globalID #:size (x-y-z (* 2 n)))
+  (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
+  )
+
+;; < 1 sec
+(define (mult32-sketch threadId blockID blockDim A B C n)
+  (define globalID (+ threadId (* blockID blockDim)))
+  (define a-cached 0)
+  (define b-cached 0)
+  (global-to-reg A a-cached globalID #:size (x-y-z n))
+  (global-to-reg B b-cached globalID #:size (x-y-z n))
+  
+  (define tidx (modulo (get-x threadId) 32))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i n])
+    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [] #:fw 1)]
+           [lane-b (?fan-easy tidx warpSize i warpSize [] #:fw 1)]
+           [a (shfl a-cached lane-a)]
+           [b (shfl b-cached lane-b)]
+          )
+      (accumulate acc1 (list a b) #:pred (?cond-easy tidx (@dup i)))
+      (accumulate acc2 (list a b) #:pred (?cond-easy tidx (@dup i)))
+      ))
+
+  (reg-to-global acc1 C globalID #:size (x-y-z (* 2 n)))
+  (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
   )
 
 
@@ -120,9 +138,6 @@
                       (x-y-z n 1))
                    (x-y-z n 1)
                    #f #:warp-shape (x-y-z warpSize 1) #:round (x-y-z 2 1))
-
-  (pretty-display `(a-cached ,a-cached))
-  (pretty-display `(b-cached ,b-cached))
   
   (define tidx (get-idInWarp threadId))
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
@@ -252,13 +267,13 @@
                    (x-y-z n 1)
                    #f #:warp-shape (x-y-z warpSize 1) #:round (x-y-z 2 1))
   
-  (define tidx (get-idInWarp threadId))
+  (define tidx (modulo (get-x threadId) 32))
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc3 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
-  (for ([i warpSize #;(choose warpSize (??))])
+  (for ([i warpSize])
     (let* ([lane-a1 (?fan-easy tidx warpSize
                           i warpSize [] #:fw 1)]
            [lane-a2 (?fan-easy tidx warpSize
@@ -359,7 +374,7 @@
 
   (pretty-display `(a ,a-cached))
   
-  (define tidx (get-idInWarp threadId))
+  (define tidx (modulo (get-x threadId) 32))
   (define tidy (get-y threadId))
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
@@ -531,12 +546,12 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size mult-spec mult64 w (* 2 w))])
+    (let ([ret (run-with-warp-size mult-spec mult32 w (* 1 w))])
       (pretty-display `(test ,w ,ret))
       (pretty-display `(cost ,(get-cost)))
       ))
   )
-;(test)
+(test)
 
 ;; warp size 4, concrete load: 2 s
 ;; warp size 4 & 5, concrete load: 7 s
@@ -545,7 +560,7 @@
 (define (synthesis)
   (pretty-display "solving...")
   (assert (andmap
-           (lambda (w) (run-with-warp-size mult-spec mult64-sketch w (* 2 w)))
+           (lambda (w) (run-with-warp-size mult-spec mult32-sketch w (* 1 w)))
            (list 4)))
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
@@ -554,7 +569,7 @@
   (print-forms sol)
   (pretty-display `(cost ,this-cost))
   )
-(synthesis)
+;(synthesis)
 
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)

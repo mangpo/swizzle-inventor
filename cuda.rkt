@@ -54,6 +54,8 @@
 (define blockSize warpSize)
 (define blockDim (list blockSize))
 (define gridDim (list 1))
+
+;; Return a vector of size blockSize with value x.
 (define (@dup x) (for/vector ([i blockSize]) x))
 (define (get-blockDim) blockDim)
 (define (get-gridDim) gridDim)
@@ -165,6 +167,8 @@
       x
       (gcd/bound y (modulo x y) (sub1 depth))))
 
+;; Produce a permutation of 1D vector x of size n according to
+;; the shuffle function f.
 (define (permute-vector x n f)
   (define y (create-matrix-local (x-y-z n)))
   (for ([i n])
@@ -368,16 +372,37 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
+(define-syntax-rule
+  (for/bounded ([i I]) body ...)
+  (letrec ([f (lambda (i bound)
+                (when (< i I)
+                  (if (> bound 0)
+                      (begin
+                        body ...
+                        (f (+ i 1) (- bound 1)))
+                      (assert #f))))])
+    (f 0 8)))
+
 (define (create-matrix-local dims [init (lambda () 0)])
   (create-matrix (append dims (list blockSize))))
 
+;; Load I in global memory to I-shared in shared memory
+;; pattern -- (x-y-z stride-x ...)
+;;   >> each thread load stride-x * stride-y * ... consecutive block in round-robin fasion
+;; offset -- the starting x-y-z coordinate of global memory that the thread block loads.
+;; sizes  -- (x-y-z size-x ...)
+;;   >> each thread block loads size-x * size-y * ... values
+;; transpose -- #t for load with transpose
+;; round -- (x-y-z round-x ...) or just round-x for 1D. Round of the round robin to fully load 'sizes'.
+;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
 (define (global-to-shared I I-shared pattern offset sizes [transpose #f]
-                          #:round [round 1] #:size [s #f])
+                          #:round [round 1] #:size [gsize #f])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
   (assert (all? (@<= sizes (@* blockDim pattern round)) true?))
   (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?))
-  (when (> (length pattern) 1) (assert s "#:size must be specified for dimenion > 1"))
+  (when (> (length pattern) 1) (assert gsize "#:size must be specified for dimenion > 1"))
   
   (cond
     [(= (length offset) 1)
@@ -428,6 +453,8 @@
                (set I-shared x y z (get I (+ offset-x x) (+ offset-y y) (+ offset-z z)))))))]
     ))
 
+;; Similar to global-to-shared but
+;; for storing I-shared in shared memory to I in global memory
 (define (shared-to-global I-shared I pattern offset sizes [transpose #f] #:round [round 1] #:size [s #f])
   (if transpose
       (global-cost (reverse pattern) (reverse sizes))
@@ -475,6 +502,8 @@
                (set I (+ offset-x x) (+ offset-y y) (+ offset-z z) (get I-shared x y z))))))]
     ))
 
+;; Load I in global memory at offset to register I-reg.
+;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
 (define-syntax global-to-reg
     (syntax-rules ()
       ((global-to-reg I I-reg offset)
@@ -490,25 +519,13 @@
            (when (for/and ([b bounds] [i global-i]) (< i b))
              (set I-reg i (get* I global-i))))))
 
-      ((global-to-reg I I-reg offset #:size s)
+      ((global-to-reg I I-reg offset #:size gsize)
        (global-to-reg I I-reg offset))))
 
 
-#;(define-syntax-rule
-  (global-to-reg I I-reg offset)
-  (let* ([bounds (get-dims I)]
-         [blockSize (vector-length offset)]
-         [new-I-reg (make-vector blockSize #f)])
-    (global-cost (list 1) (list (size-of I-reg)))
-    (for ([t blockSize])
-      (set new-I-reg t (clone I-reg)))
-    (set! I-reg new-I-reg)
-    (for ([i blockSize]
-          [global-i offset])
-      (when (for/and ([b bounds] [i global-i]) (< i b))
-        (set I-reg i (get* I global-i))))))
-
-(define (reg-to-global I-reg I offset #:size [s #f])
+;; Store register I-reg to I in global memory at offset.
+;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
+(define (reg-to-global I-reg I offset #:size [gsize #f])
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
     (global-cost (list 1) (list (size-of I-reg)))
@@ -517,7 +534,9 @@
       (when (for/and ([b bounds] [i global-i]) (< i b))
         (set* I global-i (get I-reg i))))))
 
-(define (reg-to-global-update f I-reg I offset #:size [s #f])
+;; Update I in global memory at offset to f(old_value, I-reg)
+;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
+(define (reg-to-global-update f I-reg I offset #:size [gsize #f])
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
     (global-cost (list 1) (list (size-of I-reg)))
@@ -527,21 +546,17 @@
               (< i b))
         (set* I global-i (f (get* I global-i) (get I-reg i)))))))
 
-(define-syntax-rule
-  (for/bounded ([i I]) body ...)
-  (letrec ([f (lambda (i bound)
-                (when (< i I)
-                  (if (> bound 0)
-                      (begin
-                        body ...
-                        (f (+ i 1) (- bound 1)))
-                      (assert #f))))])
-    (f 0 8)))
-
-;; pattern = (x-y-z stride-x ...)
-;; The pattern is round-robin in all deminsion.
-;; stride-x = how many elements belong to a thread in one round.
-;; e.g. stride-x = 2 --> load t0 t0 t1 t1 t2 t2 ...
+;; Load I in global memory to I-reg in local memory/registers
+;; pattern -- (x-y-z stride-x ...)
+;;   >> each thread load stride-x * stride-y * ... consecutive block in round-robin fasion
+;; offset -- the starting x-y-z coordinate of global memory that the warp loads.
+;; sizes  -- (x-y-z size-x ...)
+;;   >> each warp loads size-x * size-y * ... values
+;; transpose -- #t for load with transpose
+;; warp-shape -- (x-y-z shape-x shape-y ...) must be specified for 2D and 3D
+;; round -- (x-y-z round-x ...) or just round-x for 1D. Round of the round robin to fully load 'sizes'.
+;; shfl  -- shuffle function for load with shuffle. 'k' is the iteration of the round robin.
+;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
 (define (global-to-local I I-reg pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
                          #:round [round 1]
@@ -636,6 +651,8 @@
     [else (raise "unimplemented")]
     ))
 
+;; Similar to global-to-local but
+;; for storing I-reg in local memory/registers to I in global memory
 (define (local-to-global I-reg I pattern offset sizes transpose
                          #:warp-shape [warp-shape warpSize]
                          #:round [round 1]
