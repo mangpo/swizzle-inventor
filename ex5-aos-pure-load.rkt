@@ -197,9 +197,11 @@
                  offset
                  (x-y-z (* warpSize struct-size)) #f #:round struct-size)
 
+  ;; column shuffle
   (define I-cached2 (permute-vector I-cached struct-size
                                     (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
-  
+
+  ;; row shuffle
   (for ([i struct-size])
     (let* ([lane (?fan-easy localId warpSize i struct-size #:fw 1)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
@@ -207,7 +209,7 @@
       (set O-cached (@dup i) x))
     )
   
-
+  ;; column shuffle
   (define O-cached2 (permute-vector O-cached struct-size
                                     (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
   
@@ -230,7 +232,8 @@
   
   (define localId (modulo (get-x threadId) 32))
   (define offset (* struct-size (- (+ (* blockID blockDim) (get-x threadId)) localId)))
-  
+
+  ;; load with (row) shuffle
   (global-to-local
    I
    I-cached
@@ -239,9 +242,12 @@
    (x-y-z (* warpSize struct-size))
    #f #:round struct-size
    #:shfl (lambda (localId i) (?fan-easy localId warpSize i struct-size #:fw 1)))
-  
+
+  ;; column shuffle
   (define O-cached (permute-vector I-cached struct-size
                                    (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
+
+  ;; store with (row) shuffle
   (local-to-global
    O-cached
    O
