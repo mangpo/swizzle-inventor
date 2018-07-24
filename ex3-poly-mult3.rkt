@@ -97,13 +97,16 @@
 
 ;; < 1 sec
 (define (mult32-sketch threadId blockID blockDim A B C n)
+  ;; For 2D kernel like this, threadId, blockID, and blockDim contain two values: .x and .y.
+  ;; (* blockID blockDim) = (x-y-z (* blockID.x blockDim.x) (* blockID.y blockDim.y))
+  ;; x-y-z is for creating a tuple of values
   (define globalID (+ threadId (* blockID blockDim)))
   (define a-cached 0)
   (define b-cached 0)
   (global-to-reg A a-cached globalID #:size (x-y-z n))
   (global-to-reg B b-cached globalID #:size (x-y-z n))
   
-  (define tidx (modulo (get-x threadId) 32))
+  (define tidx (modulo (get-x threadId) 32)) ;; threadId.x % 32
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
