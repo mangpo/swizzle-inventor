@@ -129,7 +129,7 @@
         (define (def-loop skip)
           (when (< skip n)
             (add-st (convert-statement
-                     `(define ,(format "_~a~a" x (sub1 skip))
+                     `(define ,(format "_~a~a" x (/ skip 2))
                         (make-vector ,size))))
             (def-loop (* 2 skip))))
         (def-loop 2)
@@ -383,7 +383,7 @@
     )
   
   (define str-list
-    (list (format "~a~a~a<~a>((~a*) ~a, (~a*) ~a" name (if shfl "_shlf" "") d data-type
+    (list (format "~a~a~a<~a>((~a*) ~a, (~a*) ~a" name (if shfl "_shfl" "") d data-type
                   data-type (sanitize A) data-type (sanitize B))
           "," (string-join (for/list ([i d]) (round-f i)) ", ")
           "," (string-join (for/list ([i d]) (offset-f i)) ", ")
@@ -469,7 +469,7 @@
                   k m* ck* dk* 0)]
 
     [(list 'fan j n* cj* dj* group* conf-fw
-           k m* ck* dk* #:offset offset)
+           k m* ck* dk* offset)
      (convert-fan j n* cj* dj* group* conf-fw
                   k m* ck* dk* offset)]
 
@@ -684,7 +684,7 @@
    ))
 
 (define (rotate-log-step x* y* n skip rot i i-expr last-iter)
-  (define x (if (= skip 1) x* (format "_~a~a" x* (sub1 skip))))
+  (define x (if (= skip 1) x* (format "_~a~a" x* (/ skip 2))))
   (define y (if last-iter y* (format "_~a~a" x* skip)))
   (list
    (format-indent "for(int ~a=0; ~a<~a; ~a++) {" i i n i)
@@ -742,7 +742,7 @@
   (cond
     [(= (length xs) 1) (car xs)]
     [else
-     (define y (@++ (cdr xs)))
+     (define y (@** (cdr xs)))
      (define x (car xs))
      (cond
        [(equal? x 0) 0]

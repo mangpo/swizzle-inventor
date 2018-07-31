@@ -95,7 +95,6 @@
   (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
   )
 
-;; < 1 sec
 (define (mult32-sketch threadId blockID blockDim A B C n)
   ;; For 2D kernel like this, threadId, blockID, and blockDim contain two values: .x and .y.
   ;; (* blockID blockDim) = (x-y-z (* blockID.x blockDim.x) (* blockID.y blockDim.y))
@@ -111,10 +110,52 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [] #:fw 1)]
-           [lane-b (?fan-easy tidx warpSize i warpSize [] #:fw 1)]
+    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
+           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
+           [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
+           [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (shfl a-cached lane-a)]
            [b (shfl b-cached lane-b)]
+          )
+      (accumulate acc1 (list a b) #:pred (?cond-easy tidx (@dup i)))
+      (accumulate acc2 (list a b) #:pred (?cond-easy tidx (@dup i)))
+      ))
+
+  (reg-to-global acc1 C globalID #:size (x-y-z (* 2 n)))
+  (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
+  )
+
+
+(define (mult32-shared-sketch threadId blockID blockDim A B C n)
+  ;; For 2D kernel like this, threadId, blockID, and blockDim contain two values: .x and .y.
+  ;; (* blockID blockDim) = (x-y-z (* blockID.x blockDim.x) (* blockID.y blockDim.y))
+  ;; x-y-z is for creating a tuple of values
+  (define globalID (+ threadId (* blockID blockDim)))
+  (define-shared a-cached (create-matrix blockDim))
+  (define-shared b-cached (create-matrix blockDim))
+  (global-to-shared A a-cached
+                    (x-y-z 1 1) ;; stride
+                    (* blockDim blockID)
+                    blockDim
+                    #f #:round (x-y-z 1 1) #:size (x-y-z n 1))
+  (global-to-shared B b-cached
+                    (x-y-z 1 1) ;; stride
+                    (* blockDim blockID)
+                    blockDim
+                    #f #:round (x-y-z 1 1) #:size (x-y-z n 1))
+  
+  (define tidx (modulo (get-x threadId) 32)) ;; threadId.x % 32
+  (define tidy (get-y threadId))
+  (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
+  (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
+
+  (for ([i n])
+    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
+           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
+           [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
+           [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
+           [a (get a-cached lane-a tidy)]
+           [b (get b-cached lane-b tidy)]
           )
       (accumulate acc1 (list a b) #:pred (?cond-easy tidx (@dup i)))
       (accumulate acc2 (list a b) #:pred (?cond-easy tidx (@dup i)))
@@ -277,14 +318,14 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (?fan-easy tidx warpSize
-                          i warpSize [] #:fw 1)]
-           [lane-a2 (?fan-easy tidx warpSize
-                          i warpSize [] #:fw 1)]
-           [lane-b1 (?fan-easy tidx warpSize
-                          i warpSize [] #:fw 1)]
-           [lane-b2 (?fan-easy tidx warpSize
-                          i warpSize [] #:fw 1)]
+    (let* ([lane-a1 (?fan tidx warpSize
+                          i warpSize [])]
+           [lane-a2 (?fan tidx warpSize
+                          i warpSize [])]
+           [lane-b1 (?fan tidx warpSize
+                          i warpSize [])]
+           [lane-b2 (?fan tidx warpSize
+                          i warpSize [])]
            [idx-a1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-a2 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-b1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
@@ -424,11 +465,11 @@
   (global-to-shared A a-cached
                     (x-y-z 1 1) ;; stride
                     block-offset
-                    (* (x-y-z 2 1) blockDim))
+                    (* (x-y-z 2 1) blockDim) #:round (x-y-z 2 1) #:size (x-y-z n))
   (global-to-shared B b-cached
                     (x-y-z 1 1) ;; stride
                     block-offset
-                    (* (x-y-z 2 1) blockDim))
+                    (* (x-y-z 2 1) blockDim) #:round (x-y-z 2 1) #:size (x-y-z n))
 
   (pretty-display `(a ,a-cached))
   
@@ -440,14 +481,14 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (?fan tidx n
-                          i warpSize #:fw 1)]
-           [lane-a2 (?fan tidx n
-                          i warpSize #:fw 1)]
-           [lane-b1 (?fan tidx n
-                          i warpSize #:fw 1)]
-           [lane-b2 (?fan tidx n
-                          i warpSize #:fw 1)]
+    (let* ([lane-a1 (?fan-easy tidx n
+                          i warpSize [])]
+           [lane-a2 (?fan-easy tidx n
+                          i warpSize [])]
+           [lane-b1 (?fan-easy tidx n
+                          i warpSize [])]
+           [lane-b2 (?fan-easy tidx n
+                          i warpSize [])]
            [a1 (get a-cached lane-a1 tidy)]
            [a2 (get a-cached lane-a2 tidy)]
            [b1 (get b-cached lane-b1 tidy)]
@@ -474,7 +515,7 @@
       (accumulate acc4 (list a2 b2) #:pred (?cond tidx (@dup i)))
       ))
 
-  (reg-to-global acc1 C (+ block-offset (* threadId)))
+  (reg-to-global acc1 C (+ block-offset threadId))
   (reg-to-global acc2 C (+ block-offset (x-y-z warpSize 0) threadId))
   (reg-to-global acc3 C (+ block-offset (x-y-z (* 2 warpSize) 0) threadId))
   (reg-to-global acc4 C (+ block-offset (x-y-z (* 3 warpSize) 0) threadId))
@@ -549,21 +590,17 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size mult-spec mult32 w (* 1 w))])
+    (let ([ret (run-with-warp-size mult-spec mult32-shared-sketch w (* 1 w))])
       (pretty-display `(test ,w ,ret))
       (pretty-display `(cost ,(get-cost)))
       ))
   )
-(test)
+;(test)
 
-;; warp size 4, concrete load: 2 s
-;; warp size 4 & 5, concrete load: 7 s
-;; warp size 4 & 5, synth load: 5/9 s
-;; warp size 32: 44/776 s
 (define (synthesis)
   (pretty-display "solving...")
   (assert (andmap
-           (lambda (w) (run-with-warp-size mult-spec mult32-sketch w (* 1 w)))
+           (lambda (w) (run-with-warp-size mult-spec mult32-shared-sketch w (* 1 w)))
            (list 4)))
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
@@ -572,7 +609,10 @@
   (print-forms sol)
   (pretty-display `(cost ,this-cost))
   )
-;(synthesis)
+(define t0 (current-seconds))
+(synthesis)
+(define t1 (current-seconds))
+(- t1 t0)
 
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)

@@ -88,31 +88,30 @@
 ;(define my-lane (gen-lane? 1)) ;;(+ i localId)
 (define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
-  (define warpID (get-warpId threadId))
-  (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
-  (define gid (get-global-threadId threadId blockID))
+  ;(define warpID (get-warpId threadId))
+  ;(define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
+  ;(define gid (get-global-threadId threadId blockID))
+  (define gid (+ (* blockID blockDim) threadId))
+  (define localId (get-idInWarp threadId))
+  (define offset (- gid localId))
   (global-to-local I I-cached
                  (x-y-z 1)
-                 (+ (* blockID blockDim) (* warpID warpSize))
+                 offset
                  (x-y-z (+ warpSize 2)) #f #:round 2)
 
-  (define localId (get-idInWarp threadId))
   (define o (create-accumulator (list +) /3 blockDim))
 
-  (for/bounded ([i (??)])
-    (let* (;[index (?index localId (@dup i) [warpSize] 1)] 
-           ;[lane (?lane localId (@dup i) [warpSize] 1)] ;; time 7/14
-           ;[lane (interpret-lane my-lane (vector localId (@dup i)) (vector))]
-           ;[lane (?lane-mod2 (@dup i) localId [warpSize] 0)] ;; time 8/19 7/19
-           [index (ite (?cond-easy (@dup i) localId) (@dup 0) (@dup 1))]
-           [lane (?fan-easy localId warpSize
-                            i warpSize [] #:fw 1)] 
+  (for/bounded ([i 3])
+    (let* ([index (ite (?cond (@dup i) localId) (@dup 0) (@dup 1))]
+           [lane (?fan localId warpSize
+                            i warpSize [])] 
            [x (shfl (get I-cached index) lane)])
-      (accumulate o x #:pred (?cond-easy localId (@dup i))) ; (?cond localId (@dup i))
+      (accumulate o x #:pred (?cond localId (@dup i))) ; (?cond localId (@dup i))
       ))
   
   (reg-to-global o O gid)
   )
+
 
 (define (test)
   (for ([w (list 32)])
@@ -121,18 +120,6 @@
   )
 ;(test)
 
-;; warp size 4, concrete load: 2 s
-;; warp size 4, synth load: 6 s
-;; warp size 4 & 5, synth load: 5/14 s
-;; warp size 4 & 5, synth load, ref: 18/26 s
-
-;; warp size 4 & 5, synth load, lane custom: 15/23 s
-;; warp size 4 & 5, synth load, lane custom2: 11/15 s
-;; warp size 4 & 5, synth load, lane depth2: 7/21 s
-;; warp size 4 & 5, synth load, lane depth2 custom2: symbolic eval is very slow
-;; warp size 4 & 5, synth load, ?lane-mod2: 12/28 s
-;; warp size 32, ?lane-mod2: 62/66 s
-;; warp size 32, ?fan-easy: 15/25 s
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
@@ -143,7 +130,10 @@
   (print-forms sol)
   ;(print-lane 'lane (evaluate my-lane sol) '#(localId i) '#())
   )
+(define t0 (current-seconds))
 (synthesis)
+(define t1 (current-seconds))
+(- t1 t0)
 
 (define (load-synth)
   (define-values (block-size I-sizes O-sizes I O O*)

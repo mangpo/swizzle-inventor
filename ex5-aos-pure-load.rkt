@@ -28,14 +28,14 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 7)
 (define n-block 1)
 
 
 
 (define (create-IO warpSize)
   (set-warpSize warpSize)
-  (define block-size (* 2 warpSize))
+  (define block-size (* 1 warpSize))
   (define array-size (* n-block block-size))
   (define I-sizes (x-y-z (* array-size struct-size)))
   (define I (create-matrix I-sizes gen-uid))
@@ -199,11 +199,11 @@
 
   ;; column shuffle
   (define I-cached2 (permute-vector I-cached struct-size
-                                    (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
+                                    (lambda (i) (?fan i struct-size localId warpSize))))
 
   ;; row shuffle
   (for ([i struct-size])
-    (let* ([lane (?fan-easy localId warpSize i struct-size #:fw 1)]
+    (let* ([lane (?fan localId warpSize i struct-size)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
            )
       (set O-cached (@dup i) x))
@@ -211,7 +211,7 @@
   
   ;; column shuffle
   (define O-cached2 (permute-vector O-cached struct-size
-                                    (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
+                                    (lambda (i) (?fan i struct-size localId warpSize))))
   
   (local-to-global O-cached2 O
                       (x-y-z 1)
@@ -241,11 +241,11 @@
    offset
    (x-y-z (* warpSize struct-size))
    #f #:round struct-size
-   #:shfl (lambda (localId i) (?fan-easy localId warpSize i struct-size #:fw 1)))
+   #:shfl (lambda (localId i) (?fan localId warpSize i struct-size)))
 
   ;; column shuffle
   (define O-cached (permute-vector I-cached struct-size
-                                   (lambda (i) (?fan-easy i struct-size localId warpSize #:fw 1))))
+                                   (lambda (i) (?fan i struct-size localId warpSize))))
 
   ;; store with (row) shuffle
   (local-to-global
@@ -256,7 +256,7 @@
    (x-y-z (* warpSize struct-size))
    #f #:round struct-size
    #:shfl (lambda (localId i)
-            (?fan-easy localId warpSize i struct-size #:fw 1)))
+            (?fan localId warpSize i struct-size)))
   )
 
 (define (test)
@@ -278,5 +278,8 @@
   (print-forms sol)
   (pretty-display `(cost ,this-cost))
   )
+(define t0 (current-seconds))
 (synthesis)
+(define t1 (current-seconds))
+(- t1 t0)
 

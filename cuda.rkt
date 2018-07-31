@@ -36,7 +36,7 @@
 (require (only-in racket [sort %sort] [< %<]))
 (provide (rename-out [@+ +] [@- -] [@* *] [@modulo modulo] [@quotient quotient] [@< <] [@<= <=] [@> >] [@>= >=] [@= =] [@ite ite]
                      [@bvadd bvadd] [@bvsub bvsub] [@bvand bvand] [@bvxor bvxor] [@bvshl bvshl] [@bvlshr bvlshr] [@extract extract] [@bvlog bvlog])
-         @int @bv @dup gen-uid for/bounded
+         @int @bv @dup gen-uid gen-sym gen-bv for/bounded
          define-shared
          create-matrix-local
          global-to-shared shared-to-global
@@ -69,6 +69,12 @@
 (define (gen-uid)
   (set! uid (add1 uid))
   uid)
+(define (gen-sym)
+  (define-symbolic* x integer?)
+  x)
+(define (gen-bv)
+  (define-symbolic* x (bitvector 4))
+  x)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; lifted operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -170,16 +176,18 @@
 ;; Produce a permutation of 1D vector x of size n according to
 ;; the shuffle function f.
 (define (permute-vector x n f)
+  (pretty-display `(permute-vector ,n))
   (define y (create-matrix-local (x-y-z n)))
   (for ([i n])
+    (pretty-display `(i ,i ,n))
     (set y (@dup i) (get x (f i))))
   y)
 
 ;; old (fan n c0 c1 c2 c3 j i c11)
 ;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
 (define (fan j n cj dj group conf-fw 
-             k m ck dk #:offset [offset 0] #:dg [dg group])
-  (assert (and (>= group 2) (<= group n)))
+             k m ck dk [offset 0] #:dg [dg group])
+  (assert (and (>= group 1) (<= group n)))
   (assert (and (>= cj -1) (< cj group)))
   (assert (and (>= ck -1) (< ck group)))
   (assert (and (>= offset 0) (< offset group)))
@@ -536,14 +544,15 @@
 
 ;; Update I in global memory at offset to f(old_value, I-reg)
 ;; gsize -- (x-y-z gsize-x ...) size of global memory, must be specified for 2D and 3D
-(define (reg-to-global-update f I-reg I offset #:size [gsize #f])
+(define (reg-to-global-update f I-reg I offset #:size [gsize #f] #:pred [pred (make-vector blockSize)])
   (let* ([bounds (get-dims I)]
          [blockSize (vector-length offset)])
     (global-cost (list 1) (list (size-of I-reg)))
     (for ([i blockSize]
           [global-i offset])
-      (when (for/and ([b bounds] [i global-i])
-              (< i b))
+      (when (and (vector-ref pred i)
+                 (for/and ([b bounds] [i global-i])
+                   (< i b)))
         (set* I global-i (f (get* I global-i) (get I-reg i)))))))
 
 ;; Load I in global memory to I-reg in local memory/registers

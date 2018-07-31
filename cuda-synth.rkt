@@ -28,7 +28,8 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan ?fan-easy
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan ?fan-easy ?fan-level
+         ?lane-mod
          ?cond ?cond-easy ?ite ?const ?const32
          ?warp-size ?warp-offset
          print-forms choose
@@ -63,14 +64,42 @@
           (?lane-log-bv x ... [c ...] (- depth 1))
           (?lane-log-bv x ... [c ...] (- depth 1)))))
 
-(define-synthax (?lane x ... [c ...] depth)
- #:base (choose x ... (@dup 1))
+(define-synthax (?lane-c x ... [c ...] depth)
+ #:base (choose x ... (@dup (?const c ...)))
  #:else (choose
-         x ... (@dup 1)
-         ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (choose (@dup c) ...))
+         x ... (@dup (?const c ...))
+         ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (?const c ...))
          ((choose + -)
-          (?lane x ... [c ...] (- depth 1))
-          (?lane x ... [c ...] (- depth 1)))))
+          (?lane-c x ... [c ...] (- depth 1))
+          (?lane-c x ... [c ...] (- depth 1)))))
+
+(define-synthax (?lane x ... depth)
+ #:base (choose x ... (@dup (??)))
+ #:else (choose
+         x ... (@dup (??))
+         ((choose quotient modulo *) (?lane x ... (- depth 1)) (??))
+         ((choose + -)
+          (?lane x ... (- depth 1))
+          (?lane x ... (- depth 1)))))
+
+
+(define-synthax ?lane-mod
+  ([(?lane-mod x ... depth n [c ...])
+    (modulo (?lane-c x ... [c ...] depth) n)]
+  
+   [(?lane-mod x ... depth n)
+    (modulo (?lane x ... depth) n)]
+
+   ))
+
+(define level 3)
+(define-synthax ?fan-level
+  ([(?fan-level eid n k m)
+    (cond
+      [(= level 1) (?fan-easy eid n k m #:fw 1)]
+      [(= level 2) (?fan-easy eid n k m #:fw 1)]
+      [(= level 3) (?fan eid n k m)]
+      )]))
 
 (define-synthax ?cond-easy
   ([(?cond-easy x ...)
@@ -86,6 +115,12 @@
              (choose x ...)
              (modulo (+ (* (??) (choose x ...)) (??)) mod)
              ))]
+
+   [(?cond x ... [c ...])
+    (choose #t #f
+            ((choose < <= > >= =) (choose x ...)
+                                  ((choose + -) (?const warpSize c ...) (choose x ...))))]
+   
    [(?cond x ...)
     (choose #t #f
             ((choose < <= > >= =) (choose x ...)
@@ -95,39 +130,39 @@
 
 (define-synthax ?fan-easy
   ([(?fan-easy eid n k m)
-    (fan eid n (??) n n (choose 1 -1)
-         k m (??) m #:offset (??))]
+    (fan eid n (??) n n 1 ;(choose 1 -1)
+         k m (??) m (??))]
 
    [(?fan-easy eid n k m #:fw conf-fw)
     (fan eid n (??) n n conf-fw
-         k m (??) m #:offset (??))]
+         k m (??) m (??))]
 
    [(?fan-easy eid n k m [c ...])
-    (fan eid n (?const c ...) n n (choose 1 -1)
-         k m (?const c ...) m #:offset (?const m c ...))]
+    (fan eid n (?const c ...) n n 1 ;(choose 1 -1)
+         k m (?const c ...) m (?const m c ...))]
 
    [(?fan-easy eid n k m [c ...] #:fw conf-fw)
     (fan eid n (?const c ...) n n conf-fw
-         k m (?const c ...) m #:offset (?const m c ...))]
+         k m (?const c ...) m (?const m c ...))]
    )
   )
 
 (define-synthax ?fan
   ([(?fan eid n k m)
     (fan eid n (??) (??) (??) (choose 1 -1)
-         k m (??) (??) #:offset (??))]
+         k m (??) (??) (??))]
 
    [(?fan eid n k m #:fw conf-fw)
     (fan eid n (??) (??) (??) conf-fw
-         k m (??) (??) #:offset (??))]
+         k m (??) (??) (??))]
 
    [(?fan eid n k m [c ...])
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
-         k m (?const c ...) (?const m c ...) #:offset (?const m c ...))]
+         k m (?const c ...) (?const m c ...) (?const m c ...))]
 
    [(?fan eid n k m [c ...] #:fw conf-fw)
     (fan eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
-         k m (?const c ...) (?const m c ...) #:offset (?const m c ...))]
+         k m (?const c ...) (?const m c ...) (?const m c ...))]
    )
   )
 
