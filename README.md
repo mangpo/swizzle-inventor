@@ -14,7 +14,7 @@ dir: cuda/myStencil
 run: bash run2d.sh
 Iandola at el: github.com/forresti/convolution
 
-ArrayFire:
+ArrayFire: cuda/arrayfire
 NPP: cuda/nppConvolution
 
 Finite field multiplication
