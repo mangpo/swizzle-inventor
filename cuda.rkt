@@ -408,8 +408,10 @@
                           #:round [round 1] #:size [gsize #f])
   (global-cost pattern sizes)
   (define bounds (get-dims I))
-  (assert (all? (@<= sizes (@* blockDim pattern round)) true?))
-  (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?))
+  (pretty-display `(sizes ,sizes))
+  (pretty-display `(bounds ,(@* blockDim pattern round)))
+  (assert (all? (@<= sizes (@* blockDim pattern round)) true?) "size 1")
+  (assert (all? (@> sizes (@* blockDim pattern (@- round 1))) true?) "size 2")
   (when (> (length pattern) 1) (assert gsize "#:size must be specified for dimenion > 1"))
   
   (cond

@@ -59,11 +59,12 @@
   (define offset (* blockID tileDim))
   (global-to-shared I I-shared
                     (x-y-z 1 1)
-                    offset tileDim
-                    #:transpose #t)
+                    offset tileDim #t
+                    #:round (x-y-z 1 4) #:size sizes)
   (shared-to-global I-shared O
                     (x-y-z 1 1)
-                    (reverse offset) (reverse tileDim))
+                    (reverse offset) (reverse tileDim)
+                    #:round (x-y-z 1 4) #:size sizes)
   )
 
 ;;(run-kernel transpose1 (x-y-z 2 2) (x-y-z 3 3) I O*)
