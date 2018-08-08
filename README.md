@@ -15,7 +15,7 @@ run: bash run2d.sh
 Iandola at el: github.com/forresti/convolution
 
 ArrayFire:
-NPP:
+NPP: cuda/nppConvolution
 
 Finite field multiplication
 ---------------------------
