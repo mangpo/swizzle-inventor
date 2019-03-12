@@ -1,52 +1,15 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #include <sys/time.h>
 
 // For the CUDA runtime routines (prefixed with "cuda_")
 // /usr/local/cuda-9.0/bin/nvcc -I../../common/inc --ptx myStencil.cu
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
 #define THREADS 512
 #define O 1
 #define K 1
 #define WARP_SIZE 32
 #define RC
-
-// shared mem | register cached
-// ---------------------------
-// threads = 512, o = 1
-// k=1 2490 | 2349 us
-// k=2 2657 | 2409
-// k=4 3029 | 2905
-// k=6 3588 | 3482
-// k=12 5189 | 5947
-
-// threads = 512, o = 8
-// k=1 2032 | 1735 us (15% faster)
-// k=2 2190 | 1729 (21%)
-// k=4 2726 | 2122 (22%)
-// k=6 3253 | 3036 (7%)
-// k=12 5414 | 5134 (5%)
-
 
 #ifndef RC
 __global__ void one_stencil (const int *A, int *B, int sizeOfA)
@@ -274,4 +237,3 @@ main(void)
     printf("Done\n");
     return 0;
 }
-

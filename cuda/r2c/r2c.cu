@@ -1,30 +1,8 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #include <sys/time.h>
-
-// For the CUDA runtime routines (prefixed with "cuda_")
-// /usr/local/cuda-9.0/bin/nvcc -I../../common/inc --ptx myStencil.cu
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
+
 #define THREADS 64
 #define WARP_SIZE 32
 #define RC
@@ -38,28 +16,21 @@ struct unit {
   int x[M];
 };
 
-// 21884 us
 __global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
 {
-    //struct unit mine;
-    int localId = threadIdx.x;
-    int offset = blockIdx.x * blockDim.x;
-    int globalId = offset + localId;
-
-    int warp_id = threadIdx.x/WARP_SIZE;
-    int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
-    int j = threadIdx.x % WARP_SIZE;
-
-    //if(globalId < sizeOfA) {
-      for(int i=0; i<M; i++) {
-	  //B[offset_o + localId + (i*blockDim.x)] = A[globalId].x[i];
-	  //B[offset_o + localId + (i*blockDim.x)] = A[globalId].x[i];
-	  B[warp_offset + j + i*WARP_SIZE] = A[globalId].x[i];
-      }
-    //}
+  int localId = threadIdx.x;
+  int offset = blockIdx.x * blockDim.x;
+  int globalId = offset + localId;
+  
+  int warp_id = threadIdx.x/WARP_SIZE;
+  int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
+  int j = threadIdx.x % WARP_SIZE;
+  
+  for(int i=0; i<M; i++) {
+    B[warp_offset + j + i*WARP_SIZE] = A[globalId].x[i];
+  }
 }
 
-// 29313 us
 __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 {
 
@@ -69,28 +40,25 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
     int x[M], y[M];
 
     unsigned mask = __activemask();
-    //if(globalId < sizeOfA) {
-      for(int i=0; i<M; i++) {
-	x[i] = A[warp_offset + j + i*WARP_SIZE];
-      }
-
-      for(int i=0; i<M; i++) {
-	int inter = (i-j+1) % M;
-        if(inter < 0) inter += M;
-	int index = ((a * (i-j)) + inter/c) % M;
-	if(index < 0) index += M;
-        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
-        int index_o = (i + j/b) % M;
-        y[index_o] = __shfl_sync(mask, x[index], lane);
-      }
-
-      for(int i=0; i<M; i++) {
-	B[warp_offset + j + i*WARP_SIZE] = y[i];
-      }
-    //}
+    for(int i=0; i<M; i++) {
+      x[i] = A[warp_offset + j + i*WARP_SIZE];
+    }
+    
+    for(int i=0; i<M; i++) {
+      int inter = (i-j+1) % M;
+      if(inter < 0) inter += M;
+      int index = ((a * (i-j)) + inter/c) % M;
+      if(index < 0) index += M;
+      int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+      int index_o = (i + j/b) % M;
+      y[index_o] = __shfl_sync(mask, x[index], lane);
+    }
+    
+    for(int i=0; i<M; i++) {
+      B[warp_offset + j + i*WARP_SIZE] = y[i];
+    }
 }
 
-// 52566 us
 __global__ void r2c_lit (const int *A, int *B, int sizeOfA)
 {
 
@@ -101,22 +69,20 @@ __global__ void r2c_lit (const int *A, int *B, int sizeOfA)
     int perm[6] = {0, 4, 1, 5, 2, 3};
  
     unsigned mask = __activemask();
-    //if(globalId < sizeOfA) {
-      for(int i=0; i<M; i++) {
-	x[i] = A[warp_offset + j + i*WARP_SIZE];
-      }
-
-      for(int i=0; i<M; i++) {
-	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
-        int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
-        int index_o = (i + j/b) % M;
-        y[index_o] = __shfl_sync(mask, x[perm[index]], lane);
-      }
-
-      for(int i=0; i<M; i++) {
-	B[warp_offset + j + i*WARP_SIZE] = y[i];
-      }
-    //}
+    for(int i=0; i<M; i++) {
+      x[i] = A[warp_offset + j + i*WARP_SIZE];
+    }
+    
+    for(int i=0; i<M; i++) {
+      int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
+      int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
+      int index_o = (i + j/b) % M;
+      y[index_o] = __shfl_sync(mask, x[perm[index]], lane);
+    }
+    
+    for(int i=0; i<M; i++) {
+      B[warp_offset + j + i*WARP_SIZE] = y[i];
+    }
 }
 
 
@@ -151,7 +117,7 @@ main(void)
     // Initialize the host input vectors
     for (int i = 0; i < numElements * M; ++i)
     {
-        h_A[i] = i; //rand(); // /RAND_MAX;
+        h_A[i] = i; //rand()/RAND_MAX;
     }
 
     // Allocate the device input vector A
@@ -285,4 +251,3 @@ main(void)
     printf("Done\n");
     return 0;
 }
-

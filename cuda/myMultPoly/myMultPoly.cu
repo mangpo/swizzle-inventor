@@ -1,22 +1,3 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #define WARP_SIZE 32
 #define Y_THREADS (512/WARP_SIZE)
@@ -36,7 +17,6 @@
 #define ITER 1
 #endif
 
-// 18722 vs 9571 (95% faster)
 __global__ void multiply_shmem (const int *A, const int *B, int *C, int N)
 {
   __shared__ int sA[Y_THREADS][WARP_SIZE];
@@ -76,22 +56,6 @@ __global__ void multiply_rc (const int *A, const int *B, int *C, int N)
   b_cached = B[gy*WARP_SIZE + lindex];
 
   unsigned mask = __activemask();
-
-/*
-  for(int i=0; i<N; i++) {
-    int a = __shfl_sync(mask, a_cached, i);
-    int b = __shfl_sync(mask, b_cached, lindex-i);
-    if(i<=lindex) output ^= a&b;
-  }
-  C[gy*WARP_SIZE*2 + lindex] = output;
-  output = 0;
-  for(int i=0; i<N; i++) {
-    int a = __shfl_sync(mask, a_cached, i);
-    int b = __shfl_sync(mask, b_cached, N-1+lindex-i);
-    if(i>lindex) output ^= a&b;
-  }
-  C[gy*WARP_SIZE*2 + lindex + N] = output;
-  */
 
   int output2 = 0;
   for(int i=0; i<N; i++) {

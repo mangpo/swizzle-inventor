@@ -1,30 +1,8 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #include <sys/time.h>
-
-// For the CUDA runtime routines (prefixed with "cuda_")
-// /usr/local/cuda-9.0/bin/nvcc -I../../common/inc --ptx myStencil.cu
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
+
 #define THREADS 256
 #define WARP_SIZE 32
 #define RC
@@ -38,7 +16,6 @@ struct unit {
   int x[M];
 } __align__(8);
 
-// 6: 24926 vs 19143 vs 30347
 __global__ void r2c_naive (const struct unit *A, int *B, int sizeOfA)
 {
     int globalId = threadIdx.x + blockDim.x * blockIdx.x;
@@ -56,8 +33,6 @@ __global__ void r2c_naive (const struct unit *A, int *B, int sizeOfA)
 __global__ void r2c_bug (const int2 *A, int *B, int sizeOfA)
 {
 
-    //int warp_id = threadIdx.x/WARP_SIZE;
-    //int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
     int global_tid = (blockIdx.x * blockDim.x) + threadIdx.x;
     int warp_offset = M * (global_tid - j);
@@ -72,15 +47,12 @@ __global__ void r2c_bug (const int2 *A, int *B, int sizeOfA)
       int2 temp = A[warp_offset/2 + j + i*WARP_SIZE/2];
       x0.x[i] = temp.x;
       x0.x[i+1] = temp.y;
-      //x0.x[i] = A[warp_offset + 2*j + i*WARP_SIZE];
-      //x0.x[i+1] = A[warp_offset + 2*j + i*WARP_SIZE + 1];
     }
 
     int r20 = (3*j) & 31;
     int r22 = (3*j + 2) & 31;
     int r24 = (3*j + 1) & 31;
 
-    //int r27 = (j - 3*(j/3));
     int r27 = j % 3;
 
     #pragma unroll
@@ -207,7 +179,6 @@ __global__ void r2c_lit_reg_struct (const int *A, int *B, int sizeOfA)
     int warp_id = threadIdx.x/WARP_SIZE;
     int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
-    //__shared__ int __align__(16) x[THREADS][M];
     int perm = 0x325140;
     struct unit s;
  
@@ -217,7 +188,6 @@ __global__ void r2c_lit_reg_struct (const int *A, int *B, int sizeOfA)
     //if(globalId < sizeOfA) {
     #pragma unroll
       for(int i=0; i<M; i++) {
-	//x[threadIdx.x][i] = A[warp_offset + j + i*WARP_SIZE];
 	s.x[i] = A[warp_offset + j + i*WARP_SIZE];
       }
 
@@ -225,7 +195,6 @@ __global__ void r2c_lit_reg_struct (const int *A, int *B, int sizeOfA)
       for(int i=0; i<M; i++) {
 	int index = (i - j + 6*M) % M; //(modulo (- i j) struct-size))
         int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
-        //sum += __shfl_sync(mask, x[threadIdx.x][(perm >> (index*4)) & 0x7], lane);
         sum += __shfl_sync(mask, s.x[(perm >> (index*4)) & 0x7], lane);
       }
 
@@ -272,7 +241,6 @@ __global__ void r2c_lit_reg2 (const int *A, int *B, int sizeOfA)
     int warp_id = threadIdx.x/WARP_SIZE;
     int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
-    //__shared__ int __align__(16) x[THREADS][M];
     int perm = 0x325140;
     int x0,x1,x2,x3,x4,x5;
  
@@ -314,15 +282,6 @@ __global__ void r2c_lit_const (const int *A, int *B, int sizeOfA)
     int warp_offset = M * ((blockIdx.x * blockDim.x) + (warp_id * WARP_SIZE));
     int j = threadIdx.x % WARP_SIZE;
     __shared__ int __align__(16) x[THREADS][M];
-    /*
-     __shared__ int perm[6]; // <-- using constant
-    perm[0] = 0;
-    perm[1] = 4;
-    perm[2] = 1;
-    perm[3] = 5;
-    perm[4] = 2;
-    perm[5] = 3;
-    */
  
     unsigned mask = __activemask();
     int sum = 0;

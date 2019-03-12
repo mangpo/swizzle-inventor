@@ -1,30 +1,8 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #include <sys/time.h>
-
-// For the CUDA runtime routines (prefixed with "cuda_")
-// /usr/local/cuda-9.0/bin/nvcc -I../../common/inc --ptx myStencil.cu
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
+
 #define THREADS 64
 #define WARP_SIZE 32
 #define RC
@@ -38,7 +16,6 @@ struct unit {
   int x[M];
 };
 
-// 2: 16968 vs 18601
 __global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
 {
     int localId = threadIdx.x;
@@ -72,46 +49,17 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 
     
       for(int i=0; i<M; i++) {
-      //for(int i=0; i<1; i++) {
 	int index = (i/a - j + j/c - 1) % M;
 	if(index < 0) index += M;
-        //int lane = (((i + j/b) % M) + (j * M)) % WARP_SIZE;
 	int half1 = (i - j + j/b - 1) % M;
 	if(half1 < 0) half1 += M;
 	int lane = (half1 + i/a - i + j*a + j/a) % WARP_SIZE;
 	if(lane < 0) lane += WARP_SIZE;
         sum += __shfl_sync(mask, x[index], lane);
-        //sum = lane;
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
-    //}
 }
-
-/*
-    (let* ((index
-            (modulo
-             (+
-              (+ (* (@dup i) 0) (quotient (@dup i) a))
-              (+ (* localId -1) (quotient localId c))
-              -1)
-             c))
-           (lane
-            (+
-             (modulo
-              (+
-               (+ (* (@dup i) -1) (quotient (@dup i) warpSize))
-               (+ (* localId -1) (quotient localId b))
-               -1)
-              struct-size)
-             (modulo
-              (+
-               (+ (* (@dup i) -1) (quotient (@dup i) a))
-               (+ (* localId a) (quotient localId a))
-               warpSize)
-              warpSize)))
-
-*/
 
 /**
  * Host main routine

@@ -1,29 +1,6 @@
-/**
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- */
-
 #include <stdio.h>
 #include <sys/time.h>
-
-// For the CUDA runtime routines (prefixed with "cuda_")
-// /usr/local/cuda-9.0/bin/nvcc -I../../common/inc --ptx myStencil.cu
 #include <cuda_runtime.h>
-
 #include <helper_cuda.h>
 #define THREADS 64
 #define WARP_SIZE 32
@@ -37,7 +14,6 @@ struct unit {
   int x[M];
 };
 
-// 3: 22988 vs 25436
 __global__ void r2c_naive (struct unit *A, int *B, int sizeOfA)
 {
     int localId = threadIdx.x;
@@ -71,33 +47,14 @@ __global__ void r2c_mod (const int *A, int *B, int sizeOfA)
 
     
       for(int i=0; i<M; i++) {
-      //for(int i=0; i<1; i++) {
 	int index = (2*i + j) % M;
 	int lane = (i + j*a) % WARP_SIZE;
         sum += __shfl_sync(mask, x[index], lane);
-        //sum = lane;
       }
 
    B[blockIdx.x * blockDim.x + threadIdx.x] = sum;
     //}
 }
-
-/*
-    (let* ((index
-            (modulo
-             (+
-              (+ (* (@dup i) c) (quotient (@dup i) c))
-              (+ (* localId c) (quotient localId warpSize))
-              struct-size)
-             struct-size))
-           (lane
-            (modulo
-             (+
-              (+ (* (@dup i) c) (quotient (@dup i) warpSize))
-              (+ (* localId a) (quotient localId warpSize))
-              warpSize)
-             warpSize))
-*/
 
 /**
  * Host main routine
