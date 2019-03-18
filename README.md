@@ -1,3 +1,5 @@
+Refer to [LICENSE](LICENSE) for the license and copyright information for this project.
+
 1D stencil
 ----------
 * src: cuda/myStencil/myStencil.cu
