@@ -28,7 +28,7 @@
 
 (require "util.rkt" "cuda.rkt" "cuda-synth.rkt")
 
-(define struct-size 3)
+(define struct-size 6)
 (define n-block 1)
 
 (define (create-IO warpSize)
@@ -420,9 +420,59 @@
     (x-y-z (* warpSize struct-size))
     #f #:round struct-size))
 
+(define (AOS-load6 threadId blockID blockDim I O a b c)
+  (define I-cached (create-matrix-local (x-y-z struct-size)))
+  (define O-cached (create-matrix-local (x-y-z struct-size)))
+  
+  (define localId (modulo (get-x threadId) 32))
+  (define offset (* struct-size (- (+ (* blockID blockDim) (get-x threadId)) localId)))
+  
+  (global-to-local I I-cached
+                 (x-y-z 1)
+                 offset
+                 (x-y-z (* warpSize struct-size)) #f #:round struct-size)
+
+  ;; column shuffle
+  (define I-cached2 (permute-vector I-cached struct-size
+                                    (lambda (i)
+                                      #;(+ (modulo (quotient (+ (modulo (- i localId) struct-size) 1) 2) 3)
+                                           (* 3 (modulo (- i localId) 2)))
+                                      (fan i struct-size 3 2 struct-size 1
+                                           localId warpSize 0 warpSize #;offset 3
+                                           #:ecr 5 #:ec 1)
+                                      )))
+
+  ;; row shuffle
+  (for ([i struct-size])
+    (let* ([lane
+            #;(modulo
+             (+ (* 6 localId) (modulo (+ i (quotient localId 16)) 6))
+             warpSize)
+            (fan localId warpSize 6 16 warpSize -1
+                      i struct-size 1 struct-size  #;offset 0
+                      #:gcd 6)]
+           [x (shfl (get I-cached2 (@dup i)) lane)]
+           )
+      (set O-cached (@dup i) x))
+    )
+  
+  ;; column shuffle
+  (define O-cached2 (permute-vector O-cached struct-size
+                                    (lambda (i)
+                                      #;(modulo (- i (quotient localId 16)) struct-size)
+                                      (fan i struct-size 1 struct-size struct-size 1
+                                                     localId warpSize 0 -16  #;offset 0))))
+  
+  (local-to-global O-cached2 O
+                      (x-y-z 1)
+                      offset
+                      (x-y-z (* warpSize struct-size)) #f #:round struct-size)
+  )
+
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-load3 w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-load6 w)])
       (pretty-display `(test ,w ,ret))))
   )
 (test)
+

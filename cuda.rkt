@@ -184,38 +184,42 @@
     (set y (@dup i) (get x (f i))))
   y)
 
-;; old (fan n c0 c1 c2 c3 j i c11)
-;(define (fan n c0 c1 c2 c3 j i c11 c22 m s)
-(define (fan j n cj dj group conf-fw 
-             k m ck dk [offset 0] #:dg [dg group])
+(define (fan i n cf df group wrap 
+             k m cr dr [c 0]
+             #:gcd [gcd (quotient group df)]
+             #:ecr [ecr 0] #:ec [ec 0] ; rot
+             ;;#:cz [cz 1] #:nz [nz group] ; fan
+             )
   (assert (and (>= group 1) (<= group n)))
-  (assert (and (>= cj -1) (< cj group)))
-  (assert (and (>= ck -1) (< ck group)))
-  (assert (and (>= offset 0) (< offset group)))
+  (assert (and (>= cf -1) (< cf group)))
+  (assert (and (>= cr -1) (< cr group)))
+  (assert (and (>= c 0) (< c group)))
   
   (define rem (modulo n group))
   (assert (= rem 0))
-  (assert (= (modulo group dg) 0))
 
-  ;; dj should be group/gcd(group, cj)
-  ;; gcd = group/dj
-  ;(assert (and (>= dj 1) (<= dj group)))
-  (assert (= (modulo group dj) 0))
-  (assert (= (modulo cj (quotient group dj)) 0))
+  ;; df should be group/gcd(group, cf)
+  ;; gcd = group/df
+  (assert (= (modulo group df) 0))
+  (assert (= (modulo cf (quotient group df)) 0))
   
-  (assert (= (modulo m dk) 0))
-  (define common (quotient group dj))
+  (assert (= (modulo m dr) 0))
+  ;; If we don't impose gcd to be actual gcd(group, cf), then our equation contains Eq(24) from Trove.
+  ;; (assert (= gcd (quotient group df)))
 
-  (define offset1 (@+ (@quotient (@modulo j group) dj)
-                      (@* k ck) (@quotient k dk) offset))
-  (define offset2
-    (if (= conf-fw 1)
-        offset1
-        (@modulo offset1 common)))
+  (define ii (@modulo (@+ i (@* ecr k) ec) group)) ; extra rot (before fan)
+  ;; (define ii (@modulo (@+ (@* j cz) (@quotient j nz)) group)) ; extra fan
+
+  (define offset1 (@+ (@quotient ii df) ; fan conflict
+                      (@* k cr) (@quotient k dr) c))    ; rot
+  (define offset2 ; rotation (after fan)
+    (if (= wrap 1)
+        offset1   ; rot
+        (@modulo offset1 gcd))) ; grouped rot
   
-  (@+ (@* (@quotient j dg) group) ;; group 
-      (@modulo (@+ (@* j cj) ;; fan-out
-                   offset2)
+  (@+ (@* (@quotient ii group) group) ; top-level group 
+      (@modulo (@+ (@* ii cf) ; fan without fan conflict
+                   offset2)   ; fan conflict + rotation
                group))
   )
 
@@ -992,5 +996,4 @@
   )
 
 ;(test-transpose2)
-     
   

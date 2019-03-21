@@ -29,7 +29,8 @@
 
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
-(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3 ?fan ?fan-easy ?fan-level
+(provide ?? ?index ?lane ?lane-log ?lane-log-bv ?lane-mod1 ?lane-mod2 ?lane-mod3
+         ?fan ?fan-easy ?fan-level ?fan-extra
          ?lane-mod
          ?cond ?cond-easy ?ite ?const ?const32
          ?warp-size ?warp-offset
@@ -166,6 +167,14 @@
          k m (?const c ...) (?const m c ...) (?const m c ...))]
    )
   )
+
+
+(define-synthax ?fan-extra
+  ([(?fan-extra eid n k m)
+    (fan eid n (??) (??) (??) (choose 1 -1)
+         k m (??) (??) (??)
+         #:gcd (??) #:ecr (??) #:ec (??)
+         )]))
 
 (define-synthax ?index
   ([(?index x ... [c ...] depth)
