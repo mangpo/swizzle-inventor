@@ -103,12 +103,12 @@
   ;; column shuffle
   (define I-cached2 (permute-vector I-cached struct-size
                                     (lambda (i) (?lane-mod localId (@dup i) 2 struct-size)
-                                      #;(?fan i struct-size localId warpSize))))
+                                      #;(?sw-xform i struct-size localId warpSize))))
   (pretty-display "finish permute-vector")
 
   ;; row shuffle
   (for ([i struct-size])
-    (let* ([lane (?fan localId warpSize i struct-size)]
+    (let* ([lane (?sw-xform localId warpSize i struct-size)]
            ;[lane (?lane-mod localId (@dup i) 2 warpSize)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
            )

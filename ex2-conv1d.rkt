@@ -98,7 +98,7 @@
 
   (for/bounded ([i 3])
     (let* ([index (ite (?cond (@dup i) localId) (@dup 0) (@dup 1))]
-           [lane (?fan localId warpSize
+           [lane (?sw-xform localId warpSize
                             i warpSize [])] 
            [x (shfl (get I-cached index) lane)]
            [w (@dup (get W i))])

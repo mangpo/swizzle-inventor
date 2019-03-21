@@ -90,9 +90,9 @@
   (for* ([ky 3] [kx 3])
     (let* ([index-j (ite (< warp-row ky) 1 0)]
            [index-i (ite (< warp-col kx) 1 0)]
-           [lane-x (fan warp-col W 1 W W 1
+           [lane-x (sw-xform warp-col W 1 W W 1
                         kx 3 1 3)]
-           [lane-y (fan warp-row H 1 H H 1
+           [lane-y (sw-xform warp-row H 1 H H 1
                         ky 3 1 3)]
            [lane (+ (* lane-y W) lane-x)]
            [x (shfl (get I-cached index-i index-j) lane)])
@@ -126,9 +126,9 @@
   (for* ([ky 3] [kx 3])
     (let* ([index-j (ite (?cond warp-row ky) (@dup 0) (@dup 1))]
            [index-i (ite (?cond warp-col kx) (@dup 0) (@dup 1))]
-           [lane-x (?fan warp-col W
+           [lane-x (?sw-xform warp-col W
                               kx 3 [])]
-           [lane-y (?fan warp-row H
+           [lane-y (?sw-xform warp-row H
                               ky 3 [])]
            [lane (+ (* lane-y W) lane-x)]
            [x (shfl (get I-cached index-i index-j) lane)])
@@ -162,9 +162,9 @@
   (for* ([ky 7] [kx 7])
     (let* ([index-j (ite (?cond warp-row ky [H]) (@dup 0) (ite (?cond warp-row ky [H]) (@dup 1) (@dup 2)))]
            [index-i (ite (<= kx warp-col) (@dup 0) (ite (<= kx (+ W warp-col)) (@dup 1) (@dup 2)))]
-           [lane-x (?fan-easy warp-col W
+           [lane-x (?sw-xform-easy warp-col W
                               kx 7 [])]
-           [lane-y (?fan-easy warp-row H
+           [lane-y (?sw-xform-easy warp-row H
                               ky 7 [])]
            [lane (+ (* lane-y W) lane-x)]
            [x (shfl (get I-cached index-i index-j) lane)])
@@ -198,9 +198,9 @@
   (for* ([ky 7] [kx 7])
     (let* ([index-j (ite (<= ky warp-row) (@dup 0) (ite (<= ky (+ H warp-row)) (@dup 1) (@dup 2)))]
            [index-i (ite (<= kx warp-col) (@dup 0) (ite (<= kx (+ W warp-col)) (@dup 1) (@dup 2)))]
-           [lane-x (fan warp-col W 1 W W 1 ;(choose 1 -1)
+           [lane-x (sw-xform warp-col W 1 W W 1 ;(choose 1 -1)
                         kx 7 1 7 0)]
-           [lane-y (fan warp-row H 1 H H 1 ;(choose 1 -1)
+           [lane-y (sw-xform warp-row H 1 H H 1 ;(choose 1 -1)
                         ky 7 1 7 0)]
            [lane (+ (* lane-y W) lane-x)]
            [x (shfl (get I-cached index-i index-j) lane)])

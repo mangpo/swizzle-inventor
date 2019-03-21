@@ -107,9 +107,9 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* ([lane-a (fan tidx warpSize 0 warpSize warpSize 1
+    (let* ([lane-a (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-b (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
            [a (shfl a-cached lane-a)]
            [b (shfl b-cached lane-b)]
@@ -137,8 +137,8 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [])]
-           [lane-b (?fan-easy tidx warpSize i warpSize [])]
+    (let* ([lane-a (?sw-xform-easy tidx warpSize i warpSize [])]
+           [lane-b (?sw-xform-easy tidx warpSize i warpSize [])]
            ;[lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
            ;[lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (shfl a-cached lane-a)]
@@ -177,8 +177,8 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [])]
-           [lane-b (?fan-easy tidx warpSize i warpSize [])]
+    (let* ([lane-a (?sw-xform-easy tidx warpSize i warpSize [])]
+           [lane-b (?sw-xform-easy tidx warpSize i warpSize [])]
            ;[lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
            ;[lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (get a-cached lane-a tidy)]
@@ -217,13 +217,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (fan tidx warpSize 0 warpSize warpSize 1
+    (let* ([lane-a1 (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-a2 (fan tidx warpSize 0 warpSize warpSize 1
+           [lane-a2 (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-b1 (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b1 (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
-           [lane-b2 (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b2 (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
            [a1 (shfl (get a-cached (@dup 0) (@dup 0)) lane-a1)]
            [a2 (shfl (get a-cached (@dup 1) (@dup 0)) lane-a2)]
@@ -273,13 +273,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (fan tidx warpSize 0 warpSize warpSize 1
+    (let* ([lane-a1 (sw-xform tidx warpSize 0 warpSize warpSize 1
                          i warpSize 1 warpSize)]
-           [lane-a2 (fan tidx warpSize 0 warpSize warpSize 1
+           [lane-a2 (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-b1 (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b1 (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
-           [lane-b2 (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b2 (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
            [idx-a1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-a2 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
@@ -341,13 +341,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (?fan tidx warpSize
+    (let* ([lane-a1 (?sw-xform tidx warpSize
                           i warpSize [])]
-           [lane-a2 (?fan tidx warpSize
+           [lane-a2 (?sw-xform tidx warpSize
                           i warpSize [])]
-           [lane-b1 (?fan tidx warpSize
+           [lane-b1 (?sw-xform tidx warpSize
                           i warpSize [])]
-           [lane-b2 (?fan tidx warpSize
+           [lane-b2 (?sw-xform tidx warpSize
                           i warpSize [])]
            [idx-a1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-a2 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
@@ -406,13 +406,13 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* ([lane-a (fan tidx warpSize 0 warpSize warpSize 1
+    (let* ([lane-a (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-b (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize -1 warpSize)]
-           #;[lane-a (?fan tidx warpSize
+           #;[lane-a (?sw-xform tidx warpSize
                          i warpSize #:fw 1)]
-           #;[lane-b (?fan tidx warpSize
+           #;[lane-b (?sw-xform tidx warpSize
                          i warpSize #:fw 1)]
            [a (get a-cached lane-a tidy)]
            [b (get b-cached lane-b tidy)]
@@ -449,13 +449,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (fan tidx n 0 n n 1
+    (let* ([lane-a1 (sw-xform tidx n 0 n n 1
                          i warpSize 1 warpSize 0)]
-           [lane-a2 (fan tidx n 0 n n 1
+           [lane-a2 (sw-xform tidx n 0 n n 1
                          i warpSize 1 warpSize warpSize)]
-           [lane-b1 (fan tidx n 1 n n 1
+           [lane-b1 (sw-xform tidx n 1 n n 1
                          i warpSize -1 warpSize 0)]
-           [lane-b2 (fan tidx n 1 n n 1
+           [lane-b2 (sw-xform tidx n 1 n n 1
                          i warpSize -1 warpSize warpSize)]
            [a1 (get a-cached lane-a1 tidy)]
            [a2 (get a-cached lane-a2 tidy)]
@@ -504,13 +504,13 @@
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (?fan-easy tidx n
+    (let* ([lane-a1 (?sw-xform-easy tidx n
                           i warpSize [])]
-           [lane-a2 (?fan-easy tidx n
+           [lane-a2 (?sw-xform-easy tidx n
                           i warpSize [])]
-           [lane-b1 (?fan-easy tidx n
+           [lane-b1 (?sw-xform-easy tidx n
                           i warpSize [])]
-           [lane-b2 (?fan-easy tidx n
+           [lane-b2 (?sw-xform-easy tidx n
                           i warpSize [])]
            [a1 (get a-cached lane-a1 tidy)]
            [a2 (get a-cached lane-a2 tidy)]
@@ -570,13 +570,13 @@
   (define acc6 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (fan tidx n 0 n n 1
+    (let* ([lane-a1 (sw-xform tidx n 0 n n 1
                          i warpSize 1 warpSize #:offset 0)]
-           [lane-a2 (fan tidx n 0 n n 1
+           [lane-a2 (sw-xform tidx n 0 n n 1
                          i warpSize 1 warpSize #:offset warpSize)]
-           [lane-b1 (fan tidx n 2 warpSize warpSize 1
+           [lane-b1 (sw-xform tidx n 2 warpSize warpSize 1
                          i warpSize -1 warpSize #:offset 0 #:dg (quotient warpSize 2))]
-           [lane-b2 (fan tidx n 2 warpSize warpSize 1
+           [lane-b2 (sw-xform tidx n 2 warpSize warpSize 1
                          i warpSize -1 warpSize #:offset 1 #:dg (quotient warpSize 2))]
            [a1 (get a-cached lane-a1 tidy)]
            [a2 (get a-cached lane-a2 tidy)]

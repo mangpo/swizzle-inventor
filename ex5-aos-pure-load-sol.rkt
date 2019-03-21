@@ -90,10 +90,10 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 0 1 2 1 localId warpSize 0 1))
-           (lane (fan localId warpSize 2 16 32 -1 i struct-size 0 1))
+    (let* ((index (sw-xform i struct-size 0 1 2 1 localId warpSize 0 1))
+           (lane (sw-xform localId warpSize 2 16 32 -1 i struct-size 0 1))
            (x (shfl (get I-cached index) lane))
-           (index-o (fan i struct-size 0 1 2 1 localId warpSize 0 16)))
+           (index-o (sw-xform i struct-size 0 1 2 1 localId warpSize 0 16)))
       (unique-warp (modulo lane warpSize))
       (vector-set! indices i index)
       (vector-set! indices-o i index-o)
@@ -136,13 +136,13 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((lane1 (fan localId warpSize 0 1 2 1 i struct-size 0 1))
+    (let* ((lane1 (sw-xform localId warpSize 0 1 2 1 i struct-size 0 1))
            (x (shfl (get I-cached (@dup i)) lane1)))
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 0 1 2 1 localId warpSize 0 1))
-           (lane2 (fan localId warpSize 16 2 32 1 i struct-size 15 1))
+    (let* ((index (sw-xform i struct-size 0 1 2 1 localId warpSize 0 1))
+           (lane2 (sw-xform localId warpSize 16 2 32 1 i struct-size 15 1))
            (x (shfl-send (get temp index) lane2)))
       (set O-cached (@dup i) x)))
    (local-to-global
@@ -167,10 +167,10 @@
     #f #:round struct-size)
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 2 3 3 1 localId warpSize 0 1))
-           (lane (fan localId warpSize 3 32 32 1 i struct-size 0 1))
+    (let* ((index (sw-xform i struct-size 2 3 3 1 localId warpSize 0 1))
+           (lane (sw-xform localId warpSize 3 32 32 1 i struct-size 0 1))
            (x (shfl (get I-cached index) lane))
-           (index-o (fan i struct-size 1 3 3 1 localId warpSize 0 warpSize)))
+           (index-o (sw-xform i struct-size 1 3 3 1 localId warpSize 0 warpSize)))
       (unique-warp (modulo lane warpSize))
       (set O-cached index-o x)))
    (local-to-global
@@ -201,13 +201,13 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((lane1 (fan localId warpSize 0 1 32 1 i struct-size 31 1))
+    (let* ((lane1 (sw-xform localId warpSize 0 1 32 1 i struct-size 31 1))
            (x (shfl (get I-cached (@dup i)) lane1)))
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 2 3 3 1 localId warpSize 0 1))
-           (lane2 (fan localId warpSize 11 32 32 1 i struct-size 20 1))
+    (let* ((index (sw-xform i struct-size 2 3 3 1 localId warpSize 0 1))
+           (lane2 (sw-xform localId warpSize 11 32 32 1 i struct-size 20 1))
            (x (shfl-send (get temp index) lane2)))
       (set O-cached (@dup i) x)))
    (local-to-global
@@ -231,10 +231,10 @@
    offset
    (x-y-z (* warpSize struct-size))
    #f #:round struct-size
-   #:shfl (lambda (localId i) (fan localId warpSize 0 1 32 1 i struct-size 31 1)))
+   #:shfl (lambda (localId i) (sw-xform localId warpSize 0 1 32 1 i struct-size 31 1)))
   (define localId (get-idInWarp threadId))
   (define O-cached (permute-vector I-cached struct-size
-                                   (lambda (i) (fan i struct-size 2 3 3 1 localId warpSize 0 1))))
+                                   (lambda (i) (sw-xform i struct-size 2 3 3 1 localId warpSize 0 1))))
   (local-to-global
    O-cached
    O
@@ -243,7 +243,7 @@
    (x-y-z (* warpSize struct-size))
    #f #:round struct-size
    #:shfl (lambda (localId i)
-            (fan localId warpSize 11 32 32 1 i struct-size 20 1)))
+            (sw-xform localId warpSize 11 32 32 1 i struct-size 20 1)))
   )
 
 (define (AOS-load4 threadId blockID blockDim I O a b c)
@@ -265,11 +265,11 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 3 4 4 1 localId warpSize 0 1))
-           (lane (fan localId warpSize 4 8 32 -1
+    (let* ((index (sw-xform i struct-size 3 4 4 1 localId warpSize 0 1))
+           (lane (sw-xform localId warpSize 4 8 32 -1
                       i struct-size 0 1))
            (x (shfl (get I-cached index) lane))
-           (index-o (fan i struct-size 0 1 4 1 localId warpSize 0 8)))
+           (index-o (sw-xform i struct-size 0 1 4 1 localId warpSize 0 8)))
       (pretty-display `(lane ,lane))
       (unique-warp (modulo lane warpSize))
       (vector-set! indices i index)
@@ -313,13 +313,13 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((lane1 (fan localId warpSize 0 1 4 1 i struct-size 0 1))
+    (let* ((lane1 (sw-xform localId warpSize 0 1 4 1 i struct-size 0 1))
            (x (shfl (get I-cached (@dup i)) lane1)))
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 0 1 4 1 localId warpSize 0 -1))
-           (lane2 (fan localId warpSize 24 4 32 1 i struct-size 7 1))
+    (let* ((index (sw-xform i struct-size 0 1 4 1 localId warpSize 0 -1))
+           (lane2 (sw-xform localId warpSize 24 4 32 1 i struct-size 7 1))
            (x (shfl-send (get temp index) lane2)))
       (set O-cached (@dup i) x)))
    (local-to-global
@@ -349,10 +349,10 @@
    (define localId (get-idInWarp threadId))
    (for
     ((i struct-size))
-    (let* ((index (fan i struct-size 3 5 5 1 localId warpSize 1 1))
-           (lane (fan localId warpSize 5 32 32 1 i struct-size 0 1))
+    (let* ((index (sw-xform i struct-size 3 5 5 1 localId warpSize 1 1))
+           (lane (sw-xform localId warpSize 5 32 32 1 i struct-size 0 1))
            (x (shfl (get I-cached index) lane))
-           (index-o (fan i struct-size 1 5 5 -1 localId warpSize 0 1)))
+           (index-o (sw-xform i struct-size 1 5 5 -1 localId warpSize 0 1)))
       (unique-warp (modulo lane warpSize))
       (vector-set! indices i index)
       (vector-set! indices-o i index-o)
@@ -399,11 +399,11 @@
       (set temp (@dup i) x)))
    (for
     ((i struct-size))
-    (let* ((index (fan i 5 3 5 5 1
+    (let* ((index (sw-xform i 5 3 5 5 1
                        localId warpSize 2 warpSize))
            #;(index
             (modulo (+ (* 3 i) (* localId 2)) 5))
-           (lane2 (fan localId 32 13 32 32 1
+           (lane2 (sw-xform localId 32 13 32 32 1
                        i 5 19 5))
            #;(lane2
             (modulo
@@ -437,7 +437,7 @@
                                     (lambda (i)
                                       #;(+ (modulo (quotient (+ (modulo (- i localId) struct-size) 1) 2) 3)
                                            (* 3 (modulo (- i localId) 2)))
-                                      (fan i struct-size 3 2 struct-size 1
+                                      (sw-xform i struct-size 3 2 struct-size 1
                                            localId warpSize 0 warpSize #;offset 3
                                            #:ecr 5 #:ec 1)
                                       )))
@@ -448,7 +448,7 @@
             #;(modulo
              (+ (* 6 localId) (modulo (+ i (quotient localId 16)) 6))
              warpSize)
-            (fan localId warpSize 6 16 warpSize -1
+            (sw-xform localId warpSize 6 16 warpSize -1
                       i struct-size 1 struct-size  #;offset 0
                       #:gcd 6)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
@@ -460,7 +460,7 @@
   (define O-cached2 (permute-vector O-cached struct-size
                                     (lambda (i)
                                       #;(modulo (- i (quotient localId 16)) struct-size)
-                                      (fan i struct-size 1 struct-size struct-size 1
+                                      (sw-xform i struct-size 1 struct-size struct-size 1
                                                      localId warpSize 0 -16  #;offset 0))))
   
   (local-to-global O-cached2 O

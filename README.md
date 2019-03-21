@@ -1,13 +1,12 @@
 ## References
 [Swizzle Inventor: Data Movement Synthesis for GPU Kernels, ASPLOS 2019](https://mangpo.net/papers/swizzle-inventor-asplos19.pdf)
 
-## Software Prerequisites
-* [Racket](https://racket-lang.org/download/)
-* [Rosette 2.x](https://github.com/emina/rosette/releases/tag/2.2). Note: Swizzle Inventor has not been tested with Rosette 3.x.
-
 ## License
 Refer to [LICENSE](LICENSE) for the license and copyright information for this project.
 
+## Software Prerequisites
+* [Racket](https://racket-lang.org/download/)
+* [Rosette 2.x](https://github.com/emina/rosette/releases/tag/2.2). Note: Swizzle Inventor has not been tested with Rosette 3.x.
 
 ## Running Synthesizer
 

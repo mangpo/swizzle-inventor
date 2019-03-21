@@ -92,9 +92,9 @@
   (define acc2 (bv 0 4))
 
   (for ([i n])
-    (let* ([lane-a (fan tidx warpSize 0 warpSize warpSize 1
+    (let* ([lane-a (sw-xform tidx warpSize 0 warpSize warpSize 1
                         i warpSize 1 warpSize)]
-           [lane-b (fan tidx warpSize 1 warpSize warpSize 1
+           [lane-b (sw-xform tidx warpSize 1 warpSize warpSize 1
                         i warpSize (- warpSize 1) warpSize)]
            [a (shfl a-cached lane-a)]
            [b (shfl b-cached lane-b)]
@@ -122,8 +122,8 @@
   (define acc2 (bv 0 4))
 
   (for ([i n])
-    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
-           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
+    (let* (;[lane-a (?sw-xform-easy tidx warpSize i warpSize [])]
+           ;[lane-b (?sw-xform-easy tidx warpSize i warpSize [])]
            [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (shfl a-cached lane-a)]
@@ -162,8 +162,8 @@
   (define acc2 (bv 0 4))
 
   (for ([i n])
-    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
-           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
+    (let* (;[lane-a (?sw-xform-easy tidx warpSize i warpSize [])]
+           ;[lane-b (?sw-xform-easy tidx warpSize i warpSize [])]
            [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (get a-cached lane-a tidy)]

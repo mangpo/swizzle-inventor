@@ -30,7 +30,7 @@
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
 (provide ?? ?lane ?lane-mod
-         ?fan ?fan-easy ?fan-level ?fan-extra
+         ?sw-xform ?sw-xform-easy ?sw-xform-level ?sw-xform-extra
          ?cond ?cond-easy
          ?warp-size ?warp-offset
          print-forms choose
@@ -65,12 +65,12 @@
    ))
 
 (define level 3)
-(define-synthax ?fan-level
-  ([(?fan-level eid n k m)
+(define-synthax ?sw-xform-level
+  ([(?sw-xform-level eid n k m)
     (cond
-      [(= level 1) (?fan-easy eid n k m #:fw 1)]
-      [(= level 2) (?fan-easy eid n k m #:fw 1)]
-      [(= level 3) (?fan eid n k m)]
+      [(= level 1) (?sw-xform-easy eid n k m #:fw 1)]
+      [(= level 2) (?sw-xform-easy eid n k m #:fw 1)]
+      [(= level 3) (?sw-xform eid n k m)]
       )]))
 
 (define-synthax ?cond-easy
@@ -100,48 +100,48 @@
 
    ))
 
-(define-synthax ?fan-easy
-  ([(?fan-easy eid n k m)
-    (fan eid n (??) n n 1 ;(choose 1 -1)
+(define-synthax ?sw-xform-easy
+  ([(?sw-xform-easy eid n k m)
+    (sw-xform eid n (??) n n 1 ;(choose 1 -1)
          k m (??) m (??))]
 
-   [(?fan-easy eid n k m #:fw conf-fw)
-    (fan eid n (??) n n conf-fw
+   [(?sw-xform-easy eid n k m #:fw conf-fw)
+    (sw-xform eid n (??) n n conf-fw
          k m (??) m (??))]
 
-   [(?fan-easy eid n k m [c ...])
-    (fan eid n (?const c ...) n n 1 ;(choose 1 -1)
+   [(?sw-xform-easy eid n k m [c ...])
+    (sw-xform eid n (?const c ...) n n 1 ;(choose 1 -1)
          k m (?const c ...) m (?const m c ...))]
 
-   [(?fan-easy eid n k m [c ...] #:fw conf-fw)
-    (fan eid n (?const c ...) n n conf-fw
+   [(?sw-xform-easy eid n k m [c ...] #:fw conf-fw)
+    (sw-xform eid n (?const c ...) n n conf-fw
          k m (?const c ...) m (?const m c ...))]
    )
   )
 
-(define-synthax ?fan
-  ([(?fan eid n k m)
-    (fan eid n (??) (??) (??) (choose 1 -1)
+(define-synthax ?sw-xform
+  ([(?sw-xform eid n k m)
+    (sw-xform eid n (??) (??) (??) (choose 1 -1)
          k m (??) (??) (??))]
 
-   [(?fan eid n k m #:fw conf-fw)
-    (fan eid n (??) (??) (??) conf-fw
+   [(?sw-xform eid n k m #:fw conf-fw)
+    (sw-xform eid n (??) (??) (??) conf-fw
          k m (??) (??) (??))]
 
-   [(?fan eid n k m [c ...])
-    (fan eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
+   [(?sw-xform eid n k m [c ...])
+    (sw-xform eid n (?const c ...) (?const n c ...) (?const n c ...) (choose 1 -1)
          k m (?const c ...) (?const m c ...) (?const m c ...))]
 
-   [(?fan eid n k m [c ...] #:fw conf-fw)
-    (fan eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
+   [(?sw-xform eid n k m [c ...] #:fw conf-fw)
+    (sw-xform eid n (?const c ...) (?const n c ...) (?const n c ...) conf-fw
          k m (?const c ...) (?const m c ...) (?const m c ...))]
    )
   )
 
 
-(define-synthax ?fan-extra
-  ([(?fan-extra eid n k m)
-    (fan eid n (??) (??) (??) (choose 1 -1)
+(define-synthax ?sw-xform-extra
+  ([(?sw-xform-extra eid n k m)
+    (sw-xform eid n (??) (??) (??) (choose 1 -1)
          k m (??) (??) (??)
          #:gcd (??) #:ecr (??) #:ec (??)
          )]))

@@ -88,10 +88,10 @@
      (permute-vector
       I-cached
       struct-size
-      (lambda (i) (fan i struct-size 0 1 1 -1 localId warpSize -1 8 0))))
+      (lambda (i) (sw-xform i struct-size 0 1 1 -1 localId warpSize -1 8 0))))
    (for
     ((i struct-size))
-    (let* ((lane (fan localId warpSize 2 -32 32 -1 i struct-size 16 3 10))
+    (let* ((lane (sw-xform localId warpSize 2 -32 32 -1 i struct-size 16 3 10))
            (x (shfl (get I-cached2 (@dup i)) lane)))
       (set! o (+ o x))))
    (reg-to-global o O gid))
@@ -114,11 +114,11 @@
 
   ;; column shuffle
   (define I-cached2 (permute-vector I-cached struct-size
-                                    (lambda (i) (?fan-easy i struct-size localId warpSize))))
+                                    (lambda (i) (?sw-xform-easy i struct-size localId warpSize))))
 
   ;; row shuffle
   (for ([i struct-size])
-    (let* ([lane (?fan-easy localId warpSize i struct-size)]
+    (let* ([lane (?sw-xform-easy localId warpSize i struct-size)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
            )
       (set! o (+ o x))

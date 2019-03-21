@@ -45,7 +45,7 @@
          global-to-reg reg-to-global reg-to-global-update
          warpSize set-warpSize blockSize set-blockSize
          get-warpId get-idInWarp get-blockDim get-gridDim get-global-threadId
-         shfl shfl-send fan fan-prime rotate-nogroup permute-vector
+         shfl shfl-send sw-xform sw-xform-prime rotate-nogroup permute-vector
          accumulator accumulator? accumulator-val create-accumulator accumulate accumulate-merge accumulate-final
          get-accumulator-val acc-equal? acc-print
          run-kernel get-cost reset-cost)
@@ -183,7 +183,7 @@
     (set y (@dup i) (get x (f i))))
   y)
 
-(define (fan i n cf df group wrap 
+(define (sw-xform i n cf df group wrap 
              k m cr dr [c 0]
              #:gcd [gcd (quotient group df)]
              #:ecr [ecr 0] #:ec [ec 0] ; rot
@@ -222,14 +222,14 @@
                group))
   )
 
-(define-syntax-rule (fan-prime j n cj
+(define-syntax-rule (sw-xform-prime j n cj
                                k m ck dk)
-  (fan j n cj n n 1
+  (sw-xform j n cj n n 1
        k m ck dk))
 
 (define-syntax-rule (rotate-nogroup j n 
                                     k m ck dk)
-  (fan j n 1 n n 1
+  (sw-xform j n 1 n n 1
        k m ck dk))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; performance cost ;;;;;;;;;;;;;;;;;;;;;;;;;;;

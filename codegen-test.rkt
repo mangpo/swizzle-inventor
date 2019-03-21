@@ -47,12 +47,12 @@
     struct-size
     #:shfl
     (lambda (localId i)
-      (fan localId warpSize 2 16 32 -1 i struct-size 0 1 17)))
+      (sw-xform localId warpSize 2 16 32 -1 i struct-size 0 1 17)))
    (define O-cached
      (permute-vector
       I-cached
       struct-size
-      (lambda (i) (fan i struct-size 1 2 2 1 localId warpSize 0 16 1))))
+      (lambda (i) (sw-xform i struct-size 1 2 2 1 localId warpSize 0 16 1))))
    (local-to-global
     O-cached
     O
@@ -64,7 +64,7 @@
     struct-size
     #:shfl
     (lambda (localId i)
-      (fan localId warpSize 0 1 32 -1 i struct-size 15 1 16)))))
+      (sw-xform localId warpSize 0 1 32 -1 i struct-size 15 1 16)))))
   
 
 (print-cuda (racket2cuda func 1 #:const-map (hash 'struct-size struct-size 'warpSize 32 'n 64)))
