@@ -34,3 +34,6 @@ ex4-aos-sum.rkt
 AoS-load-store
 --------------
 ex5-aos-pure-load.rkt
+
+# Racket to CUDA Code Generator
+codegen-test.rkt

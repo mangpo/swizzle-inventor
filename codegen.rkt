@@ -72,6 +72,10 @@
   (for ([s (flatten l)])
     (pretty-display s)))
 
+;; Convert racket function to CUDA.
+;;  expr  -- s-expression
+;;  d     -- kernel dimension
+;;  const -- a hash map that maps symbols to values
 (define (racket2cuda expr d #:const-map [const-map #f])
   (set! dims d)
   (match expr
@@ -111,29 +115,24 @@
 (define (convert-statement st)
   (match st
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...) '#:type type))
-     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "~a ~a~a;" type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define matrix (list 'create-matrix-local (list 'x-y-z sizes ...)))
-     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "~a ~a~a;" data-type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...) '#:type type))
-     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "__shared__ ~a ~a~a;" type (sanitize matrix) (dims-str sizes))]
 
     [(list 'define-shared matrix (list 'create-matrix (list 'x-y-z sizes ...)))
-     ;(hash-set! env matrix (length sizes))
      (hash-set! matrix-size matrix sizes)
      (format-indent "__shared__ ~a ~a~a;" data-type (sanitize matrix) (dims-str sizes))]
 
     ;; log M rotations
     [(list 'define y (list 'permute-vector x size
                            (list 'lambda (list i) (list 'fan fan-args ...))))
-     ;(hash-set! env matrix (length sizes))
      (define statements (list))
      (define (add-st x) (set! statements (cons x statements)))
 
@@ -209,7 +208,6 @@
      ]
 
     [(list 'define matrix (list 'make-vector size))
-     ;(hash-set! env matrix 1)
      (hash-set! matrix-size matrix (list size))
      (format-indent "~a ~a~a;" data-type (sanitize matrix) (dims-str (list size)))]
 
@@ -394,7 +392,6 @@
                                  #:shfl [shfl #f] #:size [gsize 1])
   (define-values (stride-n stride-f) (convert-expr stride))
   (define-values (offset-n offset-f) (convert-expr offset))
-  ;(define-values (lsize-n lsize-f) (convert-expr local-size))
   (define-values (shape-n shape-f) (convert-expr warp-shape))
   (define-values (round-n round-f) (convert-expr round))
   (define d (max stride-n offset-n))
@@ -450,13 +447,6 @@
      (values 1 (lambda (i) (format "__shfl_sync(FULL_MASK, ~a, ~a)" (e-f 0) (lane-f 0))))
      ]
 
-    #;[(list 'get matrix idxs1 ... (list 'ite c1 e1 (list 'ite c2 e2 e3)) idxs2 ...)
-     (define-values (c-n c-f) (convert-expr c1))
-     (define-values (geta-n geta-f) (convert-expr (append `(get ,matrix) idxs1 `(,e1) idxs2)))
-     (define-values (getb-n getb-f) (convert-expr (append `(get ,matrix) idxs1 `(ite ,c2 ,e2 ,e3) idxs2)))
-     (values 1 (lambda (i) (format "~a? ~a: ~a" (c-f 0) (geta-f 0) (getb-f 0))))
-     ]
-
     [(list 'get matrix idxs1 ... (list 'ite c a b) idxs2 ...)
      (define-values (c-n c-f) (convert-expr c))
      (define-values (geta-n geta-f) (convert-expr (append `(get ,matrix) idxs1 `(,a) idxs2)))
@@ -467,7 +457,6 @@
     [(list 'get matrix idxs ...)
      (define ites (map ite-const? idxs))
      (define ite-n (count identity ites))
-     ;(pretty-display `(get ,temps ,ite-n))
 
      (cond
        [(> ite-n 0)

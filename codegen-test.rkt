@@ -68,5 +68,3 @@
   
 
 (print-cuda (racket2cuda func 1 #:const-map (hash 'struct-size struct-size 'warpSize 32 'n 64)))
-;(print-cuda (convert-statement loop))
-;(print-cuda (convert-statement fan))
