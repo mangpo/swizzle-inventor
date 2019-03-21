@@ -11,28 +11,22 @@ Refer to [LICENSE](LICENSE) for the license and copyright information for this p
 
 # Running Synthesizer
 
-1D stencil
-----------
+### 1D stencil
 ex2-stencil.rkt
 
-1D conv
--------
+### 1D conv
 ex2-conv1d.rkt
 
-2D conv
--------
+### 2D conv
 ex2-stencil2d.rkt
 
-Finite field multiplication
----------------------------
+### Finite field multiplication
 ex3-poly-mult.rkt
 
-AoS-load-sum
-------------
+### AoS-load-sum
 ex4-aos-sum.rkt
 
-AoS-load-store
---------------
+### AoS-load-store
 ex5-aos-pure-load.rkt
 
 # Racket to CUDA Code Generator
