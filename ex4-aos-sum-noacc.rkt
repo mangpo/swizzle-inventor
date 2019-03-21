@@ -139,20 +139,9 @@
   (define t
    (andmap (lambda (w) (run-with-warp-size AOS-sum-spec AOS-sum-sketch w))
            (list 32)))
-  ;(define cost (get-cost))
-  ;(define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
-  ;(pretty-display `(syms ,syms))
-  ;(pretty-display t)
   (define sol (time (synthesize #:forall syms
                                 #:guarantee (assert t))))
-
-
-  ;(define this-cost (evaluate cost sol))
   (print-forms sol)
-  ;(pretty-display `(cost ,this-cost))
-  
-  ;(define sol2 (solve (assert (< cost this-cost))))
-  ;(pretty-display `(cost2 ,(evaluate cost sol2)))
   )
 (define t0 (current-seconds))
 (synthesis)

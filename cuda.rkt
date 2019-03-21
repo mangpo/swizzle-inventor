@@ -115,7 +115,6 @@
         (cond
           [(= (length l) 1) (car l)]
           [(= (length l) 2)
-           ;(when (equal? `@op `$<) (pretty-display `(@op ,l)))
            (iterate (first l) (second l) op)]
           [else (iterate (first l) (@op (cdr l)) op)]))
       (inc-cost my-op ret l)
@@ -287,11 +286,9 @@
 (define (inc-cost op ret args)
   (define op-cost (cost-of op))
   
-  ;(pretty-display `(inc-cost ,op ,op-cost))
   (define inc
     (cond
       [(member op (list @+ @-))
-       ;(pretty-display `(@modulo ,ret))
        (cond
          [(all? (first args) zero?) 0]
          [(all? (second args) zero?) 0]
@@ -304,7 +301,6 @@
          [else op-cost])]
       
       [(member op (list @*))
-       ;(pretty-display `(@* ,ret))
        (cond
          [(all? (first args) zero?) 0]
          [(all? (first args) one?) 0]
@@ -329,21 +325,11 @@
          [(all? (second args) zero-bv?) 0]
          [else op-cost])]
 
-      #|
-      [(member op (list @= @< @<= @> @>=))
-       ;(pretty-display `(@modulo ,ret))
-       (cond
-         [(all? ret false?) 0]
-         [(all? ret true?) 0]
-         [else op-cost])]
-|#
-      
       [else op-cost]
       ))
-  ;(set! cost (+ cost inc))
+  ;;(set! cost (+ cost inc))
   (void)
   )
-
 
 (define (accumulate-cost ops vals)
   (define (f ops vals)
@@ -368,8 +354,7 @@
       
       [else
        (f (reverse ops) vals)]))
-  ;(pretty-display `(accumulate-cost ,ops ,(size-of vals) ,inc))
-  ;(set! cost (+ cost inc))
+  ;;(set! cost (+ cost inc))
   (set! cost (+ cost 1))
   )
 
@@ -379,13 +364,11 @@
     (if (= pattern-x 1)
         (+ 1 (quotient (apply * sizes) blockSize))
         (* 4 (+ 1 (quotient (apply * sizes) blockSize)))))
-  ;(set! cost (+ cost my-cost))
+  ;;(set! cost (+ cost my-cost))
   (void)
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; memory operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
 (define-syntax-rule
   (for/bounded ([i I]) body ...)
   (letrec ([f (lambda (i bound)
@@ -782,39 +765,12 @@
 
     [else (equal? x y)]))
 
-#;(define (multiset-hash x)
-  (cond
-    [(list? x)
-     (foldl (lambda (xi res) (+ res (multiset-hash xi))) 0 x)]
-    [else (equal-hash-code x)]))
-
-#;(define (multiset-hash2 x)
-  (cond
-    [(list? x)
-     (foldl (lambda (xi res) (+ res (multiset-hash2 xi))) 0 x)]
-    [else (equal-secondary-hash-code x)]))
-
 (define (acc=? x y recursive-equal?)
   (and (multiset= (accumulator-val x) (accumulator-val y))
        (equal? (accumulator-oplist x) (accumulator-oplist y))
        (equal? (accumulator-opfinal x) (accumulator-opfinal y))))
 
-#;(define (acc-hash-1 x recursive-equal-hash)
-    (+ (* 10007 (multiset-hash (accumulator-val x)))
-       (* 101 (equal-hash-code (accumulator-oplist x)))
-       (* 3 (equal-hash-code (accumulator-opfinal x)))))
-
-#;(define (acc-hash-2 x recursive-equal-hash)
-    (+ (* 101 (multiset-hash2 (accumulator-val x)))
-       (* 3 (equal-secondary-hash-code (accumulator-oplist x)))
-       (* 10007 (equal-secondary-hash-code (accumulator-opfinal x)))))
-
-(struct accumulator (val oplist opfinal veclen) #:mutable
-  ;; #:methods gen:equal+hash
-  #;[(define equal-proc acc=?)
-   (define hash-proc  acc-hash-1)
-   (define hash2-proc acc-hash-2)]
-  )
+(struct accumulator (val oplist opfinal veclen) #:mutable)
 
 (define-syntax create-accumulator
   (syntax-rules ()

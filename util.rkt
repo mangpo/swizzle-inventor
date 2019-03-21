@@ -27,7 +27,6 @@
 
 #lang rosette
 
-;(require (only-in rosette [vector-ref $vector-ref]))
 (provide (all-defined-out))
 
 (define BW 10)
@@ -67,7 +66,7 @@
      (for*/all ([my-vec vec] [my-index index])
        (vector-ref my-vec my-index))]))
 
-(define (my-vector-set! vec index val) ;; TODO: for*/all
+(define (my-vector-set! vec index val)
   (when (and (vector? index) (vector? val))
     (assert (= (vector-length vec) (vector-length val)) `(= (vector-length vec) (vector-length val))))
   (cond

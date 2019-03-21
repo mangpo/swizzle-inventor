@@ -59,9 +59,6 @@
         (accumulate o (get I (+ i j))))
       (set O i o))))
 
-(define my-lane-spec
-  (vector
-   (inst 0 (vector 1 2))))
 (define (conv1d threadId blockID blockDim I O I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
   (define warpID (get-warpId threadId))
@@ -77,7 +74,6 @@
   (for ([i 3])
     (let* ([index (ite (< localId i) 1 0)]
            [lane (+ i localId)]
-           ;[lane (interpret-lane my-lane-spec (vector localId (@dup i)) (vector))] ;;(+ i localId)
            [x (shfl (get I-cached index) lane)])
       ;(pretty-display `(lane ,i ,localId ,lane))
       (accumulate o x)
@@ -86,12 +82,8 @@
   )
 
 
-;(define my-lane (gen-lane? 1)) ;;(+ i localId)
 (define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
-  ;(define warpID (get-warpId threadId))
-  ;(define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
-  ;(define gid (get-global-threadId threadId blockID))
   (define gid (+ (* blockID blockDim) threadId))
   (define localId (get-idInWarp threadId))
   (define offset (- gid localId))
@@ -129,7 +121,6 @@
                     (lambda (w) (run-with-warp-size conv1d-spec conv1d-sketch w))
                     (list 32))))))
   (print-forms sol)
-  ;(print-lane 'lane (evaluate my-lane sol) '#(localId i) '#())
   )
 (define t0 (current-seconds))
 (synthesis)

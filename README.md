@@ -1,41 +1,36 @@
+# References
+[Swizzle Inventor: Data Movement Synthesis for GPU Kernels, ASPLOS 2019](https://mangpo.net/papers/swizzle-inventor-asplos19.pdf)
+
+# Software Prerequisites
+* [Racket](https://racket-lang.org/download/)
+* [Rosette 2.x](https://github.com/emina/rosette/releases/tag/2.2). Note: Swizzle Inventor has not been tested with Rosette 3.x.
+
+# License
 Refer to [LICENSE](LICENSE) for the license and copyright information for this project.
+
+
+# Running Synthesizer
 
 1D stencil
 ----------
-* src: cuda/myStencil/myStencil.cu
+ex2-stencil.rkt
 
 1D conv
 -------
-* dir: cuda/myStencil
-* run: bash run1d.sh
+ex2-conv1d.rkt
 
 2D conv
 -------
-For shmeme and our synthesized code.
-* dir: cuda/myStencil
-* run: bash run2d.sh
-
-Baselines
-* Iandola at el: https://github.com/forresti/convolution
-* ArrayFire: cuda/arrayfire
-* NPP: cuda/nppConvolution
+ex2-stencil2d.rkt
 
 Finite field multiplication
 ---------------------------
-* src: https://github.com/mangpo/GpuBinFieldMult
-* degree 32 & 64, varying # of mults: bash run_32_64.sh
-* degree >= 64, fixed # of mults:     bash run_ge_64.sh
+ex3-poly-mult.rkt
 
 AoS-load-sum
 ------------
-For shmem and our synthesized code.
-* dir: cuda/r2c_sum
-* run: bash run.sh
-
-Trove: https://github.com/bryancatanzaro/trove
+ex4-aos-sum.rkt
 
 AoS-load-store
 --------------
-For shmem and our synthesized code.
-* dir: cuda/r2c
-* run: bash run.sh
+ex5-aos-pure-load.rkt

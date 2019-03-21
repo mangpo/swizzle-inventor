@@ -137,10 +137,10 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
-           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
-           [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
-           [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
+    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [])]
+           [lane-b (?fan-easy tidx warpSize i warpSize [])]
+           ;[lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
+           ;[lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (shfl a-cached lane-a)]
            [b (shfl b-cached lane-b)]
           )
@@ -177,10 +177,10 @@
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i n])
-    (let* (;[lane-a (?fan-easy tidx warpSize i warpSize [])]
-           ;[lane-b (?fan-easy tidx warpSize i warpSize [])]
-           [lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
-           [lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
+    (let* ([lane-a (?fan-easy tidx warpSize i warpSize [])]
+           [lane-b (?fan-easy tidx warpSize i warpSize [])]
+           ;[lane-a (?lane-mod tidx (@dup i) 2 n [warpSize])]
+           ;[lane-b (?lane-mod tidx (@dup i) 2 n [warpSize])]
            [a (get a-cached lane-a tidy)]
            [b (get b-cached lane-b tidy)]
           )
@@ -317,10 +317,6 @@
   (reg-to-global acc4 C (+ globalID (@dup (x-y-z (* 3 warpSize) 0))))
   )
 
-;; 6 statements: 3/7
-;; 8 statements: 2/22
-;; 16 statements, ?const: 8/2410
-;; 16 statements, ?const, ?fan-easy: 8/849
 (define (mult64-sketch threadId blockID blockDim A B C n)
   (define globalID (+ threadId (* blockID blockDim)))
   (define a-cached (create-matrix-local (x-y-z 2 1)))

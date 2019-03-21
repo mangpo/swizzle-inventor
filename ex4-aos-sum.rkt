@@ -90,13 +90,10 @@
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
-  ;(define warpID (get-warpId threadId))
-  ;(define gid (get-global-threadId threadId blockID))
   (define gid (+ (* blockID blockDim) threadId))
   (define localId (get-idInWarp threadId))
   (global-to-local I I-cached
                         (x-y-z 1) ;; stride
-                        ;(+ (* struct-size blockID blockDim) (* struct-size warpID warpSize))
                         (* struct-size (- gid localId))
                         (x-y-z (* warpSize struct-size))
                         #f #:round struct-size)
@@ -111,8 +108,8 @@
 
   ;; row shuffle
   (for ([i struct-size])
-    (let* (;[lane (?fan localId warpSize i struct-size)]
-           [lane (?lane-mod localId (@dup i) 2 warpSize)]
+    (let* ([lane (?fan localId warpSize i struct-size)]
+           ;[lane (?lane-mod localId (@dup i) 2 warpSize)]
            [x (shfl (get I-cached2 (@dup i)) lane)]
            )
       (accumulate o x #:pred #t)

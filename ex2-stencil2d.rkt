@@ -160,10 +160,7 @@
   (define o (create-accumulator (list +) /9 blockDim))
   
   (for* ([ky 7] [kx 7])
-    (let* (;[index-j (ite (?cond warp-row ky [H]) (@dup 0) (ite (?cond warp-row ky [H]) (@dup 1) (@dup 2)))]
-           ;[index-i (ite (?cond warp-col kx [W]) (@dup 0) (ite (?cond warp-col kx [W]) (@dup 1) (@dup 2)))]
-           ;[index-j (ite (<= ky warp-row) (@dup 0) (ite (<= ky (+ H warp-row)) (@dup 1) (@dup 2)))]
-           [index-j (ite (?cond warp-row ky [H]) (@dup 0) (ite (?cond warp-row ky [H]) (@dup 1) (@dup 2)))]
+    (let* ([index-j (ite (?cond warp-row ky [H]) (@dup 0) (ite (?cond warp-row ky [H]) (@dup 1) (@dup 2)))]
            [index-i (ite (<= kx warp-col) (@dup 0) (ite (<= kx (+ W warp-col)) (@dup 1) (@dup 2)))]
            [lane-x (?fan-easy warp-col W
                               kx 7 [])]
