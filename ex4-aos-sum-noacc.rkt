@@ -96,6 +96,7 @@
       (set! o (+ o x))))
    (reg-to-global o O gid))
 
+;; Sketch that doesn't use accumulators.
 (define (AOS-sum-sketch threadId blockID blockDim I O I-sizes O-sizes a b c)
   
   (define I-cached (create-matrix-local (x-y-z struct-size)))
@@ -110,7 +111,7 @@
                         (x-y-z (* warpSize struct-size))
                         #f #:round struct-size)
 
-  (define o 0)
+  (define o 0)  ;; not accumulator
 
   ;; column shuffle
   (define I-cached2 (permute-vector I-cached struct-size

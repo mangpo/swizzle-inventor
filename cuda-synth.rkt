@@ -30,49 +30,14 @@
 (require rosette/lib/synthax)
 (require "util.rkt" "cuda.rkt")
 (provide ?? ?lane ?lane-mod
-         ?sw-xform ?sw-xform-easy ?sw-xform-level ?sw-xform-extra
+         ?sw-xform ?sw-xform-easy ?sw-xform-extra
          ?cond ?cond-easy
          ?warp-size ?warp-offset
          print-forms choose
          ID get-grid-storage collect-inputs check-warp-input num-regs vector-list-append
          unique unique-warp unique-list)
 
-(define-synthax (?lane-c x ... [c ...] depth)
- #:base (choose x ... (@dup (?const c ...)))
- #:else (choose
-         x ... (@dup (?const c ...))
-         ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (?const c ...))
-         ((choose + -)
-          (?lane-c x ... [c ...] (- depth 1))
-          (?lane-c x ... [c ...] (- depth 1)))))
-
-(define-synthax (?lane x ... depth)
- #:base (choose x ... (@dup (??)))
- #:else (choose
-         x ... (@dup (??))
-         ((choose quotient modulo *) (?lane x ... (- depth 1)) (??))
-         ((choose + -)
-          (?lane x ... (- depth 1))
-          (?lane x ... (- depth 1)))))
-
-(define-synthax ?lane-mod
-  ([(?lane-mod x ... depth n [c ...])
-    (modulo (?lane-c x ... [c ...] depth) n)]
-  
-   [(?lane-mod x ... depth n)
-    (modulo (?lane x ... depth) n)]
-
-   ))
-
-(define level 3)
-(define-synthax ?sw-xform-level
-  ([(?sw-xform-level eid n k m)
-    (cond
-      [(= level 1) (?sw-xform-easy eid n k m #:fw 1)]
-      [(= level 2) (?sw-xform-easy eid n k m #:fw 1)]
-      [(= level 3) (?sw-xform eid n k m)]
-      )]))
-
+;; Condition swizzle (easy template, smaller search space)
 (define-synthax ?cond-easy
   ([(?cond-easy x ...)
     (choose #t #f
@@ -80,6 +45,7 @@
 
    ))
 
+;; Condition swizzle (full template)
 (define-synthax ?cond
   ([(?cond x ... #:mod mod)
     (choose #t #f
@@ -100,6 +66,35 @@
 
    ))
 
+(define-synthax (?lane-c x ... [c ...] depth)
+ #:base (choose x ... (@dup (?const c ...)))
+ #:else (choose
+         x ... (@dup (?const c ...))
+         ((choose quotient modulo *) (?lane x ... [c ...] (- depth 1)) (?const c ...))
+         ((choose + -)
+          (?lane-c x ... [c ...] (- depth 1))
+          (?lane-c x ... [c ...] (- depth 1)))))
+
+(define-synthax (?lane x ... depth)
+ #:base (choose x ... (@dup (??)))
+ #:else (choose
+         x ... (@dup (??))
+         ((choose quotient modulo *) (?lane x ... (- depth 1)) (??))
+         ((choose + -)
+          (?lane x ... (- depth 1))
+          (?lane x ... (- depth 1)))))
+
+;; Naive template for transformation index swizzle
+(define-synthax ?lane-mod
+  ([(?lane-mod x ... depth n [c ...])
+    (modulo (?lane-c x ... [c ...] depth) n)]
+  
+   [(?lane-mod x ... depth n)
+    (modulo (?lane x ... depth) n)]
+
+   ))
+
+;; Proposed template for transformation index swizzle (easy template, smaller search space)
 (define-synthax ?sw-xform-easy
   ([(?sw-xform-easy eid n k m)
     (sw-xform eid n (??) n n 1 ;(choose 1 -1)
@@ -119,6 +114,7 @@
    )
   )
 
+;; Proposed template for transformation index swizzle (full template)
 (define-synthax ?sw-xform
   ([(?sw-xform eid n k m)
     (sw-xform eid n (??) (??) (??) (choose 1 -1)
@@ -138,7 +134,7 @@
    )
   )
 
-
+;; Proposed template for transformation index swizzle (advanced template, bigger search space)
 (define-synthax ?sw-xform-extra
   ([(?sw-xform-extra eid n k m)
     (sw-xform eid n (??) (??) (??) (choose 1 -1)
@@ -183,7 +179,7 @@
   )
 
 
-;;;;;;;;;;;;;;;;; load synthesis ;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;; for data loading synthesis ;;;;;;;;;;;;;;;;;;;;
 (struct ID (thread warp block))
 
 (define (get-grid-storage)

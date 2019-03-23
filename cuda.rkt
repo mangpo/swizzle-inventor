@@ -67,20 +67,28 @@
   (set! blockSize s))
 
 (define uid 0)
+
+;; Generate a unique id.
 (define (gen-uid)
   (set! uid (add1 uid))
   uid)
+
+;; Generate a symbolic integer variable.
 (define (gen-sym)
   (define-symbolic* x integer?)
   x)
+
+;; Generate a symbolic bitvector variable.
 (define (gen-bv)
   (define-symbolic* x (bitvector 4))
   x)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; lifted operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Create a variable in shared memory.
 (define-syntax-rule (define-shared x exp) (define x exp))
 
+;; Apply op on every element of x and y.
 (define (iterate x y op)
   (define (f x y)
     (cond
@@ -93,7 +101,7 @@
       [else (op x y)]))
   (f x y))
 
-
+;; Vectorized ite
 (define (@ite c x y) ;; TODO: not quite correct
   (define (f c x y)
     (cond
@@ -122,9 +130,11 @@
     (define my-op (lambda l (@op l)))
     ))
 
+;; Vector operations with cost 0.
 (define-operator @++ $++ +)
 (define-operator @** $** *)
 
+;; Vector operations.
 (define-operator @+ $+ +)
 (define-operator @- $- -)
 (define-operator @* $* *)
@@ -167,6 +177,7 @@
       (let ([s (bvsub (bv BW (bitvector BW)) b)])
         (bvlshr (bvshl x s) s))))
 
+;; Compute GCD of x and y with recursive bound = 8.
 (define (gcd/bound x y [depth 8])
   (assert (> depth 0))
   (if (= y 0)
@@ -183,11 +194,14 @@
     (set y (@dup i) (get x (f i))))
   y)
 
+;; Transformation index swizzle.
+;; Refer to Section 5.3 of https://mangpo.net/papers/swizzle-inventor-asplos19.pdf
+;; The arguments' names should be consistent with the paper.
 (define (sw-xform i n cf df group wrap 
              k m cr dr [c 0]
              #:gcd [gcd (quotient group df)]
-             #:ecr [ecr 0] #:ec [ec 0] ; rot
-             ;;#:cz [cz 1] #:nz [nz group] ; fan
+             #:ecr [ecr 0] #:ec [ec 0] ; extra rot
+             ;;#:cz [cz 1] #:nz [nz group] ; extra fan
              )
   (assert (and (>= group 1) (<= group n)))
   (assert (and (>= cf -1) (< cf group)))
@@ -222,15 +236,17 @@
                group))
   )
 
-(define-syntax-rule (sw-xform-prime j n cj
-                               k m ck dk)
-  (sw-xform j n cj n n 1
-       k m ck dk))
+;; sw-xform when cf and n are co-prime.
+(define-syntax-rule (sw-xform-prime i n cf
+                               k m cr dr)
+  (sw-xform i n cf n n 1
+       k m cr dr))
 
-(define-syntax-rule (rotate-nogroup j n 
-                                    k m ck dk)
-  (sw-xform j n 1 n n 1
-       k m ck dk))
+;; rotation
+(define-syntax-rule (rotate-nogroup i n 
+                                    k m cr dr)
+  (sw-xform i n 1 n n 1
+       k m cr dr))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; performance cost ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -380,6 +396,7 @@
                       (assert #f))))])
     (f 0 8)))
 
+;; Create a local matrix.
 (define (create-matrix-local dims [init (lambda () 0)])
   (create-matrix (append dims (list blockSize))))
 
@@ -713,7 +730,7 @@
     [else (raise "unimplemented")]
     )))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;; shuffle operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;; intra-warp shuffle operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (shfl val lane)
   (define len (vector-length val))
@@ -734,6 +751,8 @@
   ;(set! cost (+ cost 2))
   res)
 
+;; Scatter version of shuffle instruction. This instruction doesn't exist in GPU.
+;; This function is for convenient uses.
 (define (shfl-send val lane)
   (define len (vector-length val))
   (define res (make-vector len #f))
@@ -753,7 +772,11 @@
   ;(set! cost (+ cost 2))
   res)
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;; special accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;; accumulators ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(struct accumulator (val oplist opfinal veclen) #:mutable)
+
+;; Multiset equal
 (define (multiset= x y)
   (cond
     [(and (list? x) (list? y))
@@ -765,13 +788,13 @@
 
     [else (equal? x y)]))
 
+;; Accumulator equal
 (define (acc=? x y recursive-equal?)
   (and (multiset= (accumulator-val x) (accumulator-val y))
        (equal? (accumulator-oplist x) (accumulator-oplist y))
        (equal? (accumulator-opfinal x) (accumulator-opfinal y))))
 
-(struct accumulator (val oplist opfinal veclen) #:mutable)
-
+;; Create an accumulator or a vector of accumulators.
 (define-syntax create-accumulator
   (syntax-rules ()
     ((create-accumulator op-list final-op)
@@ -785,6 +808,7 @@
       (for/vector ([xi x]) (accumulator-val xi))
       (accumulator-val x)))
 
+;; Convert to a vector of sorted lists.
 (define (vector-of-list l veclen)
   (for/vector ([i veclen])
     (let ([each (map (lambda (x) (if (vector? x) (get x i) x)) l)])
@@ -802,6 +826,7 @@
 
 (define (accumulate-final x) x)
 
+;; Accumulate val-list into an accumulator x or a vector of val-lists into a vector of accumulators.
 (define (accumulate x val-list #:pred [pred #t])
   (define (f val-list op-list veclen)
     (if (= (length op-list) 1)
@@ -846,6 +871,7 @@
 
   )
 
+;; Check equivalence of x and y accumulators or vectors of accumulators.
 (define (acc-equal? x y)
   (cond
     [(or (and (vector? x) (vector? y))
@@ -861,7 +887,7 @@
 
     [else (equal? x y)]))
 
-
+;; Print an accumulator or a vector of accumulators.
 (define (acc-print x)
   (cond
     [(accumulator? x)
@@ -873,6 +899,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; run kernel ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Get a warp id from a thread id.
 (define (get-warpId threadID)
   (if (list? threadID)
       (let ([sum 0])
@@ -883,6 +910,7 @@
       (for/vector ([id threadID])
         (get-warpId id))))
 
+;; Get a local thread id within a warp.
 (define (get-idInWarp threadID)
   (if (list? threadID)
       (let ([sum 0])
@@ -893,6 +921,7 @@
       (for/vector ([id threadID])
         (get-idInWarp id))))
 
+;; Get a global thread id.
 (define (get-global-threadId threadId blockId)
   ;(pretty-display `(get-global-threadId ,threadId ,blockId ,blockDim))
   (if (list? threadId)
@@ -900,6 +929,7 @@
       (for/vector ([id threadId])
         (get-global-threadId id blockId))))
 
+;; Get a vector of all thread ids given a threadblock size.
 (define (get-threadId sizes)
   (define ret (list))
   (define (rec id sizes)
@@ -927,29 +957,7 @@
   ;;(pretty-display `(cost ,cost))
   )
 
+;; Run a kernel.
 (define-syntax-rule (run-kernel kernel my-blockDim my-gridDim x ...)
   (let ([Ids (get-threadId my-blockDim)])
     (run-grid kernel my-gridDim my-blockDim Ids (list x ...))))
-
-
-(define (test-transpose1)
-  (define I (create-matrix (x-y-z 4 4) (lambda () 0)))
-  (for* ([y 4] [x 4]) (set I x y (+ x (* 10 y))))
-  (define I-shared (create-matrix (x-y-z 3 2) (lambda () 0)))
-  (global-to-shared I I-shared #f (x-y-z 2 1) (x-y-z 2 3) #:transpose #t)
-  (pretty-display `(I ,I))
-  (pretty-display `(I-shared ,I-shared))
-  (assert (equal? I-shared #(#(12 22 32) #(13 23 33))) 'test-transpose1)
-  )
-
-(define (test-transpose2)
-  (define I-shared #(#(12 22 32) #(13 23 33)))
-  (define I (create-matrix (x-y-z 4 4) (lambda () 0)))
-  (shared-to-global I-shared I #f (x-y-z 2 1) (x-y-z 3 2) #:transpose #t)
-  (pretty-display `(I ,I))
-  (pretty-display `(I-shared ,I-shared))
-  (assert (equal? I #(#(0 0 0 0) #(0 0 12 13) #(0 0 22 23) #(0 0 32 33))) 'test-transpose2)
-  )
-
-;(test-transpose2)
-  

@@ -31,6 +31,7 @@
 (define n-block 2)
 (define /3 (lambda (x) (/ x 3)))
 
+;; Create input and output matrices.
 (define (create-IO warpSize)
   (set-warpSize warpSize)
   (define block-size (* 2 warpSize))
@@ -42,6 +43,7 @@
   (define O* (create-matrix O-sizes))
   (values block-size I-sizes O-sizes I O O* W))
 
+;; Run sequential program spec and GPU kernel kernel, and compare their outputs.
 (define (run-with-warp-size spec kernel w)
   (define-values (block-size I-sizes O-sizes I O O* W)
     (create-IO w))
@@ -52,6 +54,7 @@
   (acc-equal? O O*)
   )
 
+;; Sequential program spec
 (define (conv1d-spec I O W o-sizes)
   (for ([i (get-x o-sizes)])
     (let ([o (create-accumulator (list * +) identity)])
@@ -59,6 +62,7 @@
         (accumulate o (list (get W j) (get I (+ i j)))))
       (set O i o))))
 
+;; Complete kernel
 (define (conv1d threadId blockID blockDim I O W I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
   (define warpID (get-warpId threadId))
@@ -83,7 +87,7 @@
   (reg-to-global o O gid)
   )
 
-
+;; Kernel sketch
 (define (conv1d-sketch threadId blockID blockDim I O W I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
   (define gid (+ (* blockID blockDim) threadId))
@@ -108,7 +112,7 @@
   (reg-to-global o O gid)
   )
 
-
+;; Check correctness of a complete kernel against a spec.
 (define (test)
   (for ([w (list 32)])
     (let ([ret (run-with-warp-size conv1d-spec conv1d w)])
@@ -116,6 +120,7 @@
   )
 ;(test)
 
+;; Synthesize a kernel sketch given a spec.
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
@@ -130,6 +135,7 @@
 (define t1 (current-seconds))
 (- t1 t0)
 
+;; Synthesize data loading from global memory.
 (define (load-synth)
   (define-values (block-size I-sizes O-sizes I O O*)
     (create-IO 4))

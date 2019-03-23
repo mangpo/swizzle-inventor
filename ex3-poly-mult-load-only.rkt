@@ -65,7 +65,7 @@
           (accumulate d (list a b))))
       (set C (+ (get-x sizes) index) d))))
 
-
+;; Synthesize data loading from global memory.
 (define (load-synth)
   (define-values (block-size sizes A B C D C* D*)
     (create-IO 4))

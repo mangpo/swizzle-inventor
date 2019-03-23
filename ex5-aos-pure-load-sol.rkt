@@ -116,7 +116,7 @@
     (x-y-z (* warpSize struct-size))
     #f #:round struct-size))
 
-(define (AOS-loadsh2 threadId blockID blockDim I O a b c)
+(define (AOS-load-rcr-2 threadId blockID blockDim I O a b c)
    (define I-cached (create-matrix-local (x-y-z struct-size)))
    (define temp (create-matrix-local (x-y-z struct-size)))
    (define O-cached (create-matrix-local (x-y-z struct-size)))
@@ -293,7 +293,7 @@
     (x-y-z (* warpSize struct-size))
     #f #:round struct-size))
 
-(define (AOS-loadsh4 threadId blockID blockDim I O a b c)
+(define (AOS-load-rcr-4 threadId blockID blockDim I O a b c)
    (define I-cached (create-matrix-local (x-y-z struct-size)))
    (define temp (create-matrix-local (x-y-z struct-size)))
    (define O-cached (create-matrix-local (x-y-z struct-size)))
@@ -375,7 +375,7 @@
     (x-y-z (* warpSize struct-size))
     #f #:round struct-size))
 
-(define (AOS-loadsh5 threadId blockID blockDim I O a b c)
+(define (AOS-load-rcr-5 threadId blockID blockDim I O a b c)
    (define I-cached (create-matrix-local (x-y-z struct-size)))
    (define temp (create-matrix-local (x-y-z struct-size)))
    (define O-cached (create-matrix-local (x-y-z struct-size)))

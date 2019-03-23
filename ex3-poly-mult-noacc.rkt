@@ -107,6 +107,7 @@
   (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
   )
 
+;; Sketch that doesn't use accumulators.
 (define (mult32-sketch threadId blockID blockDim A B C n)
   ;; For 2D kernel like this, threadId, blockID, and blockDim contain two values: .x and .y.
   ;; (* blockID blockDim) = (x-y-z (* blockID.x blockDim.x) (* blockID.y blockDim.y))
@@ -118,8 +119,8 @@
   (global-to-reg B b-cached globalID #:size (x-y-z n))
   
   (define tidx (modulo (get-x threadId) 32)) ;; threadId.x % 32
-  (define acc1 (bv 0 4))
-  (define acc2 (bv 0 4))
+  (define acc1 (bv 0 4))  ;; not accumulator
+  (define acc2 (bv 0 4))  ;; not accumulator
 
   (for ([i n])
     (let* (;[lane-a (?sw-xform-easy tidx warpSize i warpSize [])]
@@ -137,7 +138,7 @@
   (reg-to-global acc2 C (+ globalID (@dup (x-y-z n 0))) #:size (x-y-z (* 2 n)))
   )
 
-
+;; Sketch that doesn't use accumulators.
 (define (mult32-shared-sketch threadId blockID blockDim A B C n)
   ;; For 2D kernel like this, threadId, blockID, and blockDim contain two values: .x and .y.
   ;; (* blockID blockDim) = (x-y-z (* blockID.x blockDim.x) (* blockID.y blockDim.y))

@@ -32,6 +32,7 @@
 (define n-block 2)
 (define /3 (lambda (x) (/ x 3)))
 
+;; Create input and output matrices.
 (define (create-IO warpSize)
   (set-warpSize warpSize)
   (define block-size (* 2 warpSize))
@@ -42,6 +43,7 @@
   (define O* (create-matrix O-sizes))
   (values block-size I-sizes O-sizes I O O*))
 
+;; Run sequential program spec and GPU kernel kernel, and compare their outputs.
 (define (run-with-warp-size spec kernel w)
   (define-values (block-size I-sizes O-sizes I O O*)
     (create-IO w))
@@ -52,14 +54,16 @@
   (acc-equal? O O*)
   )
 
-(define (conv1d-spec I O o-sizes)
+;; Sequential program spec
+(define (stencil-1d-spec I O o-sizes)
   (for ([i (get-x o-sizes)])
     (let ([o (create-accumulator (list +) /3)])
       (for ([j 3])
         (accumulate o (get I (+ i j))))
       (set O i o))))
 
-(define (conv1d threadId blockID blockDim I O I-sizes O-sizes)
+;; Complete kernel
+(define (stencil-1d threadId blockID blockDim I O I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
   (define warpID (get-warpId threadId))
   (define offset (+ (* blockID blockDim) (* warpID warpSize)))  ;; warpID = (threadIdy * blockDimx + threadIdx)/warpSize
@@ -81,8 +85,8 @@
   (reg-to-global o O gid)
   )
 
-
-(define (conv1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
+;; Kernel sketch
+(define (stencil-1d-sketch threadId blockID blockDim I O I-sizes O-sizes)
   (define I-cached (create-matrix-local (x-y-z 2)))
   (define gid (+ (* blockID blockDim) threadId))
   (define localId (get-idInWarp threadId))
@@ -105,20 +109,21 @@
   (reg-to-global o O gid)
   )
 
-
+;; Check correctness of a complete kernel against a spec.
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size conv1d-spec conv1d-sketch w)])
+    (let ([ret (run-with-warp-size stencil-1d-spec stencil-1d-sketch w)])
       (pretty-display `(test ,w ,ret))))
   )
 ;(test)
 
+;; Synthesize a kernel sketch given a spec.
 (define (synthesis)
   (pretty-display "solving...")
   (define sol
     (time (solve
            (assert (andmap
-                    (lambda (w) (run-with-warp-size conv1d-spec conv1d-sketch w))
+                    (lambda (w) (run-with-warp-size stencil-1d-spec stencil-1d-sketch w))
                     (list 32))))))
   (print-forms sol)
   )
@@ -127,12 +132,13 @@
 (define t1 (current-seconds))
 (- t1 t0)
 
+;; Synthesize data loading from global memory.
 (define (load-synth)
   (define-values (block-size I-sizes O-sizes I O O*)
     (create-IO 4))
   
   ;; Store
-  (define (conv1d-store threadId blockId blockDim O)
+  (define (stencil-1d-store threadId blockId blockDim O)
     (define warpID (get-warpId threadId))
     (define o
       (for/vector ([w  warpID]
@@ -142,11 +148,11 @@
     )
   
   ;; Run spec
-  (conv1d-spec I O O-sizes)
+  (stencil-1d-spec I O O-sizes)
   
   ;; Collect IDs
   (define IDs (create-matrix O-sizes))
-  (run-kernel conv1d-store (x-y-z block-size) (x-y-z n-block) IDs)
+  (run-kernel stencil-1d-store (x-y-z block-size) (x-y-z n-block) IDs)
   (define-values (threads warps blocks) (get-grid-storage))
   (collect-inputs O IDs threads warps blocks)
   (define n-regs (num-regs warps I))

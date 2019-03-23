@@ -59,7 +59,7 @@
   (acc-equal? O O*)
   )
 
-(define (conv2d-spec I O o-sizes)
+(define (stencil-2d-spec I O o-sizes)
   (for* ([j (get-y o-sizes)]
          [i (get-x o-sizes)])
     (let ([o (create-accumulator (list +) /9)])
@@ -67,7 +67,7 @@
         (accumulate o (get I (+ i ii) (+ j jj)))
       (set O i j o)))))
 
-(define (conv2d threadId blockID blockDim I O I-sizes O-sizes)
+(define (stencil-2d threadId blockID blockDim I O I-sizes O-sizes)
   (define gid (+ (* blockID blockDim) threadId))
   (define gx (get-x gid))
   (define gy (get-y gid))
@@ -103,7 +103,7 @@
                  (lov2vol (x-y-z (+ offset-x warp-col) (+ offset-y warp-row))))
   )
 
-(define (conv2d-sketch threadId blockID blockDim I O I-sizes O-sizes)
+(define (stencil-2d-sketch threadId blockID blockDim I O I-sizes O-sizes)
   (define gid (+ (* blockID blockDim) threadId))
   (define gx (get-x gid))
   (define gy (get-y gid))
@@ -139,7 +139,7 @@
                  (lov2vol (x-y-z (+ offset-x warp-col) (+ offset-y warp-row))))
   )
 
-(define (conv2d-sketch2 threadId blockID blockDim I O I-sizes O-sizes)
+(define (stencil-2d-sketch2 threadId blockID blockDim I O I-sizes O-sizes)
   (define gid (+ (* blockID blockDim) threadId))
   (define gx (get-x gid))
   (define gy (get-y gid))
@@ -175,7 +175,7 @@
                  (lov2vol (x-y-z (+ offset-x warp-col) (+ offset-y warp-row))))
   )
 
-(define (conv2d-sketch2-sol threadId blockID blockDim I O I-sizes O-sizes)
+(define (stencil-2d-sketch2-sol threadId blockID blockDim I O I-sizes O-sizes)
   (define gid (+ (* blockID blockDim) threadId))
   (define gx (get-x gid))
   (define gy (get-y gid))
@@ -213,7 +213,7 @@
 
 (define (test)
   (for ([w (list WARP_SIZE)])
-    (let ([ret (run-with-warp-size conv2d-spec conv2d-sketch2-sol w)])
+    (let ([ret (run-with-warp-size stencil-2d-spec stencil-2d-sketch2-sol w)])
       (pretty-display `(test ,w ,ret))))
   )
 ;(test)
@@ -223,7 +223,7 @@
   (define sol
     (time (solve
            (assert (andmap
-                    (lambda (w) (run-with-warp-size conv2d-spec conv2d-sketch2 w))
+                    (lambda (w) (run-with-warp-size stencil-2d-spec stencil-2d-sketch2 w))
                     (list WARP_SIZE))))))
   (print-forms sol)
   ;(print-lane 'lane (evaluate my-lane sol) '#(localId i) '#())

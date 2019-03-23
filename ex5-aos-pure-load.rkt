@@ -72,7 +72,8 @@
 (define (print-vec x)
   (format "#(~a)" (string-join (for/list ([xi x]) (format "~a" xi)))))
 
-(define (AOS-load-sketch-fan threadId blockID blockDim I O a b c)
+;; Sketch that uses column-row-column shuffles.
+(define (AOS-load-sketch threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix-local (x-y-z struct-size)))
   (define O-cached (create-matrix-local (x-y-z struct-size)))
   
@@ -106,7 +107,8 @@
                       (x-y-z (* warpSize struct-size)) #f #:round struct-size)
   )
 
-(define (AOS-loadsh-sketch-fan threadId blockID blockDim I O a b c)
+;; Sketch that uses row-column-row shuffles.
+(define (AOS-load-rcr-sketch threadId blockID blockDim I O a b c)
   (define I-cached (create-matrix-local (x-y-z struct-size)))
   
   (define localId (modulo (get-x threadId) 32))
@@ -140,14 +142,14 @@
 
 (define (test)
   (for ([w (list 32)])
-    (let ([ret (run-with-warp-size AOS-load-spec AOS-load-sketch-fan w)])
+    (let ([ret (run-with-warp-size AOS-load-spec AOS-load-sketch w)])
       (pretty-display `(test ,w ,ret))))
   )
 ;(test)
 
 (define (synthesis)
   (pretty-display "solving...")
-  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch-fan w))
+  (assert (andmap (lambda (w) (run-with-warp-size AOS-load-spec AOS-load-sketch w))
                                            (list 32)))
   (define cost (get-cost))
   
