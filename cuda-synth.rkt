@@ -54,10 +54,10 @@
              (modulo (+ (* (??) (choose x ...)) (??)) mod)
              ))]
 
-   [(?cond x ... [c ...])
-    (choose #t #f
-            ((choose < <= > >= =) (choose x ...)
-                                  ((choose + -) (?const warpSize c ...) (choose x ...))))]
+   ;[(?cond x ... [c ...])
+   ; (choose #t #f
+   ;         ((choose < <= > >= =) (choose x ...)
+   ;                               ((choose + -) (?const warpSize c ...) (choose x ...))))]
    
    [(?cond x ...)
     (choose #t #f

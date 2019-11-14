@@ -274,20 +274,20 @@
                    (x-y-z n 1)
                    #f #:warp-shape (x-y-z warpSize 1) #:round (x-y-z 2 1))
   
-  (define tidx (modulo (get-x threadId) 32))
+  (define tidx (get-idInWarp threadId))
   (define acc1 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc2 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc3 (create-accumulator (list bvand bvxor) identity blockDim))
   (define acc4 (create-accumulator (list bvand bvxor) identity blockDim))
 
   (for ([i warpSize])
-    (let* ([lane-a1 (?sw-xform tidx warpSize
+    (let* ([lane-a1 (?sw-xform-easy tidx warpSize
                           i warpSize [])]
-           [lane-a2 (?sw-xform tidx warpSize
+           [lane-a2 (?sw-xform-easy tidx warpSize
                           i warpSize [])]
-           [lane-b1 (?sw-xform tidx warpSize
+           [lane-b1 (?sw-xform-easy tidx warpSize
                           i warpSize [])]
-           [lane-b2 (?sw-xform tidx warpSize
+           [lane-b2 (?sw-xform-easy tidx warpSize
                           i warpSize [])]
            [idx-a1 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
            [idx-a2 (ite (?cond tidx (@dup i)) (@dup 0) (@dup 1))]
@@ -499,7 +499,8 @@
 (define (synthesis)
   (pretty-display "solving...")
   (assert (andmap
-           (lambda (w) (run-with-warp-size mult-spec mult32-shared-sketch w (* 1 w)))
+           ;(lambda (w) (run-with-warp-size mult-spec mult32-sketch w (* 1 w)))
+           (lambda (w) (run-with-warp-size mult-spec mult64-sketch w (* 2 w)))
            (list 4)))
   (define cost (get-cost))
   (define sol (time (optimize #:minimize (list cost) #:guarantee (assert #t))))
