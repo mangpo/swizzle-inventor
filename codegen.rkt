@@ -132,7 +132,7 @@
 
     ;; log M rotations
     [(list 'define y (list 'permute-vector x size
-                           (list 'lambda (list i) (list 'fan fan-args ...))))
+                           (list 'lambda (list i) (list 'sw-xform sw-args ...))))
      (define statements (list))
      (define (add-st x) (set! statements (cons x statements)))
 
@@ -140,7 +140,7 @@
      
      (add-st (convert-statement `(define ,y (make-vector ,size))))
      (hash-set! env i 1)
-     (define-values (i-expr j-expr) (apply convert-fan2 fan-args))
+     (define-values (i-expr j-expr) (apply convert-sw-xform2 sw-args))
 
      (cond
        [(string->number j-expr)
@@ -303,8 +303,8 @@
      ]
 
     [(list (? load-store? f) A B stride offset size transpose '#:round round
-           '#:shfl (list 'lambda (list tid i) (list 'fan fan-args ...)))
-     (define-values (fan-n fan-f) (apply convert-fan fan-args))
+           '#:shfl (list 'lambda (list tid i) (list 'sw-xform sw-args ...)))
+     (define-values (sw-xform-n sw-xform-f) (apply convert-sw-xform sw-args))
      
      (define warp-shape
        (cond [(= dims 1) 32]
@@ -314,7 +314,7 @@
      (define global (if (load? f) A B))
      (define local (if (load? f) B A))
      (list
-      (format-indent "auto perm_~a = [=] (int ~a, int ~a) -> int{ return ~a; };" (sanitize A) tid i (fan-f 0))
+      (format-indent "auto perm_~a = [=] (int ~a, int ~a) -> int{ return ~a; };" (sanitize A) tid i (sw-xform-f 0))
       (convert-global-to-local cuda-f
                                A B round stride offset size transpose warp-shape
                               (hash-ref matrix-size local) #:shfl (format "perm_~a" (sanitize A))))
@@ -478,14 +478,14 @@
        )
      ]
 
-    [(list 'fan j n* cj* dj* group* conf-fw
+    [(list 'sw-xform j n* cj* dj* group* conf-fw
            k m* ck* dk*)
-     (convert-fan j n* cj* dj* group* conf-fw
+     (convert-sw-xform j n* cj* dj* group* conf-fw
                   k m* ck* dk* 0)]
 
-    [(list 'fan j n* cj* dj* group* conf-fw
+    [(list 'sw-xform j n* cj* dj* group* conf-fw
            k m* ck* dk* offset)
-     (convert-fan j n* cj* dj* group* conf-fw
+     (convert-sw-xform j n* cj* dj* group* conf-fw
                   k m* ck* dk* offset)]
 
     [(list 'accumulate-final acc)
@@ -607,7 +607,7 @@
      (string-join vals-ret (car ops))
      ]))
 
-(define (convert-fan j n* cj* dj* group* conf-fw
+(define (convert-sw-xform j n* cj* dj* group* conf-fw
                      k m* ck* dk* [offset 0])
      (define n (eval-const n*))
      (define cj (eval-const cj*))
@@ -648,7 +648,7 @@
 
      (convert-expr all))
 
-(define (convert-fan2 j n* cj* dj* group* conf-fw
+(define (convert-sw-xform2 j n* cj* dj* group* conf-fw
                      k m* ck* dk* [offset 0])
   (define n (eval-const n*))
   (define cj (eval-const cj*))
@@ -659,7 +659,7 @@
   (define dk (eval-const dk*))
   
   (unless (equal? group n)
-    (raise (format "fan function for permute-vector must have (~a) n = (~a) group." n group)))
+    (raise (format "sw-xform function for permute-vector must have (~a) n = (~a) group." n group)))
   
   (define offset-j ;j
     (cond
@@ -681,7 +681,7 @@
 
   (unless (or (= conf-fw 1) (equal? common group))
     (unless (equal? common 1)
-      (raise (exn "fan function for permute-vector: invalid conf-fw, group, dj."))
+      (raise (exn "sw-xform function for permute-vector: invalid conf-fw, group, dj."))
       (set! offset-j 0)
       (set! offset-k 0)))
 
